@@ -12,7 +12,7 @@
 Clone the development repository (your GitHub account needs access to this private repository):
 
 ```powershell
-git clone --branch feature/vitmatte-refinement https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3.git
+git clone --branch feature/aov-depth-normals https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3.git
 cd Sammie-Roto-2-SAM3
 .\install_sam3.bat
 ```

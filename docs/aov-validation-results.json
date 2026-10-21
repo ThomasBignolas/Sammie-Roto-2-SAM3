@@ -1,0 +1,157 @@
+{
+  "gpu": "NVIDIA RTX 5060 Ti 16 GB",
+  "source_dimensions": [
+    4608,
+    3164
+  ],
+  "source_fps": "24/1",
+  "ground_truth": false,
+  "measurements": [
+    {
+      "run": "512 sequential models",
+      "kind": "depth",
+      "frames": 18,
+      "settings": {
+        "long_edge": 512,
+        "device": "cuda",
+        "seed": 42,
+        "depth_model": "dvd",
+        "dvd_window": 17,
+        "dvd_overlap": 5,
+        "offload": "model"
+      },
+      "seconds": 23.845432900008745,
+      "seconds_per_frame": 1.3247462722227081,
+      "gpu": {
+        "peak_allocated_mib": 3075.4306640625,
+        "peak_reserved_mib": 3296.0,
+        "remaining_allocated_mib": 9.125
+      },
+      "inference_shape": [
+        352,
+        512
+      ]
+    },
+    {
+      "run": "512 sequential models",
+      "kind": "normals",
+      "frames": 18,
+      "settings": {
+        "long_edge": 512,
+        "device": "cuda",
+        "seed": 42,
+        "normal_window": 14,
+        "normal_overlap": 4,
+        "decode_chunk": 2,
+        "offload": "model",
+        "normal_axes": "native"
+      },
+      "seconds": 30.41286740003852,
+      "seconds_per_frame": 1.6896037444465846,
+      "gpu": {
+        "peak_allocated_mib": 3910.1083984375,
+        "peak_reserved_mib": 4112.0,
+        "remaining_allocated_mib": 9.125
+      },
+      "inference_shape": [
+        352,
+        512
+      ]
+    },
+    {
+      "run": "768 sequential models",
+      "kind": "depth",
+      "frames": 18,
+      "settings": {
+        "long_edge": 768,
+        "device": "cuda",
+        "seed": 42,
+        "depth_model": "dvd",
+        "dvd_window": 17,
+        "dvd_overlap": 5,
+        "offload": "model"
+      },
+      "seconds": 36.63783550000517,
+      "seconds_per_frame": 2.0354353055558425,
+      "gpu": {
+        "peak_allocated_mib": 3257.0068359375,
+        "peak_reserved_mib": 3476.0
+      },
+      "inference_shape": [
+        527,
+        768
+      ]
+    },
+    {
+      "run": "768 sequential models",
+      "kind": "normals",
+      "frames": 18,
+      "settings": {
+        "long_edge": 768,
+        "device": "cuda",
+        "seed": 42,
+        "normal_window": 14,
+        "normal_overlap": 4,
+        "decode_chunk": 2,
+        "offload": "model",
+        "normal_axes": "native"
+      },
+      "seconds": 15.400920299987774,
+      "seconds_per_frame": 0.8556066833326541,
+      "gpu": {
+        "peak_allocated_mib": 4864.7294921875,
+        "peak_reserved_mib": 5440.0
+      },
+      "inference_shape": [
+        527,
+        768
+      ]
+    },
+    {
+      "run": "VDA Small CUDA",
+      "kind": "depth",
+      "frames": 5,
+      "settings": {
+        "long_edge": 512,
+        "device": "cuda",
+        "seed": 42,
+        "depth_model": "vda-small",
+        "dvd_window": 17,
+        "dvd_overlap": 5,
+        "offload": "model"
+      },
+      "seconds": 4.369891099981032,
+      "seconds_per_frame": 0.8739782199962065,
+      "gpu": {
+        "peak_allocated_mib": 1572.27294921875,
+        "peak_reserved_mib": 2154.0
+      },
+      "inference_shape": [
+        352,
+        512
+      ]
+    },
+    {
+      "run": "tiny CPU fallback only",
+      "kind": "depth",
+      "frames": 1,
+      "source_shape": [
+        64,
+        96
+      ],
+      "seconds": 1.8259604999911971,
+      "gpu": null
+    },
+    {
+      "run": "tiny CPU fallback only",
+      "kind": "normals",
+      "frames": 1,
+      "source_shape": [
+        64,
+        96
+      ],
+      "seconds": 50.22601330000907,
+      "gpu": null
+    }
+  ]
+}

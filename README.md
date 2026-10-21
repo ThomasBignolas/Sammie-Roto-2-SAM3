@@ -1,10 +1,14 @@
-# Sammie-Roto 2 with SAM 3 / SAM 3.1 and optional ViTMatte
+# Sammie-Roto 2 with SAM 3, ViTMatte and video AOVs
 
 This development version adds Meta's official SAM 3 and SAM 3.1 video predictors to the existing Sammie-Roto interface. SAM 2.1, MatAnyone, projects, image sequences and exports remain available.
 
-**ViTMatte after VideoMaMa:** use branch `feature/vitmatte-refinement`, run `install_vitmatte.bat` after installing the application, then launch `run_sam3.bat`. In **Matting → VideoMaMa**, check **ViTMatte Edge Refinement** and select **ViTMatte Base (larger)**, the default model for new projects. Use **Refine cached mattes / Resume** for existing projects. Original mattes remain available, with A/B/C preview and export selection. See the [ViTMatte workflow, presets and limitations](docs/VITMATTE.md) and [executed validation results](docs/VITMATTE_VALIDATION.md). Refinement is OFF by default.
+**New AOVs tab:** on branch `feature/aov-depth-normals`, run `install_aov.bat` once, launch `run_sam3.bat`, then open the fourth tab after Object Removal. Generate depth with **DVD v1.1** or **Video Depth Anything Small**, and normals with **NormalCrafter** through LiveActionAOV's model implementation. Preview on the timeline and export one source-sized float multilayer EXR per frame, including original RGB, generated alpha, object layers, `depth.Z` and `N.x/y/z`. Start at a 512-pixel processing long edge on a 16 GB GPU. See [installation, licensing and workflow](docs/AOVS.md) and [actual validation](docs/AOV_VALIDATION.md).
 
-**Windows / NVIDIA quick start:** install [Git for Windows](https://git-scm.com/downloads/win), obtain this repository's `feature/vitmatte-refinement` branch, then run these files in order:
+**Checkerboard background:** choose **Checkerboard** in the background color controls in Segmentation-BGcolor or Matting-BGcolor. Alpha and matte exports keep their original behavior.
+
+**ViTMatte after VideoMaMa:** use branch `feature/aov-depth-normals`, run `install_vitmatte.bat` after installing the application, then launch `run_sam3.bat`. In **Matting → VideoMaMa**, check **ViTMatte Edge Refinement** and select **ViTMatte Base (larger)**, the default model for new projects. Use **Refine cached mattes / Resume** for existing projects. Original mattes remain available, with A/B/C preview and export selection. See the [ViTMatte workflow, presets and limitations](docs/VITMATTE.md) and [executed validation results](docs/VITMATTE_VALIDATION.md). Refinement is OFF by default.
+
+**Windows / NVIDIA quick start:** install [Git for Windows](https://git-scm.com/downloads/win), obtain this repository's `feature/aov-depth-normals` branch, then run these files in order:
 
 1. `install_sam3.bat` — creates the application and isolated SAM 3 environments.
 2. `setup_models.bat` — downloads the official checkpoints after your Hugging Face access is approved.
@@ -16,7 +20,7 @@ Load footage, select **SAM 3** or **SAM 3.1**, click **Load Model**, then add po
 
 Read the [Windows setup and workflow](docs/SAM3_WINDOWS.md), [architecture and compatibility](docs/SAM3_ARCHITECTURE.md), [test results and limitations](docs/VALIDATION.md), and [model license notes](docs/MODEL_LICENSES.md).
 
-**Validation status:** 23 automated tests and real trained-checkpoint CUDA tests pass on a 16 GB RTX 5060 Ti. SAM 2, SAM 3 and SAM 3.1 were exercised; SAM 3 / 3.1 tests include text/box detection, independent objects, bidirectional tracking, corrections, sequential MatAnyone refinement and full-resolution alpha exports. The actual MainWindow controls were also tested with both SAM 3 models and a switch back to SAM 2. See the validation document for measured results and limits; arbitrarily long shots and production-quality roto are not guaranteed by these tests.
+**Validation status:** 76 automated tests pass. Real checkpoint CUDA tests have exercised SAM 2, SAM 3/3.1, matting, DVD v1.1, NormalCrafter and VDA Small on a 16 GB RTX 5060 Ti. SAM 3 / 3.1 tests include text/box detection, independent objects, bidirectional tracking, corrections, sequential MatAnyone refinement and full-resolution alpha exports. The actual MainWindow AOV workflow exports original RGB, existing VideoMaMa alpha, depth and normals in full-resolution multilayer EXRs. See the validation documents for measured results and limits; arbitrarily long shots and production-quality results are not guaranteed by these tests.
 
 Use `run_sam3.bat` for this version: the original upstream launcher/update mechanism targets upstream releases. The original project documentation follows.
 
