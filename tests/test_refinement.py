@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QApplication, QComboBox
 from sammie.refinement.algorithms import (RefinementSettings, make_trimap, merge_alpha,
     scaled_radius, TemporalValidator, PRESETS)
 from sammie.refinement.cache import RefinementCache, save_base, load_base
-from sammie.refinement.model import VitMatteModel, predict_tiled, resolve_checkpoint
+from sammie.refinement.model import MODEL_SPECS, VitMatteModel, predict_tiled, resolve_checkpoint
 from sammie.refinement.pipeline import run_refinement
 from sammie.settings_manager import initialize_settings
 from sammie import core, sammie
@@ -196,11 +196,48 @@ class PipelineTests(unittest.TestCase):
 
     def test_incomplete_weights_fail_strict_loading_and_cleanup(self):
         from transformers import VitMatteForImageMatting
-        m = VitMatteModel(replace(self.s, device='cpu'), self.root)
+        m = VitMatteModel(replace(self.s, device='cpu', checkpoint=str(self.root)), self.root)
         with patch.object(VitMatteForImageMatting, 'from_pretrained',
                           return_value=(object(), {'missing_keys':['decoder.matting_head.weight']})):
             with self.assertRaisesRegex(ValueError, 'architecture mismatch'): m.load()
         self.assertIsNone(m.model)
+
+    def test_local_checkpoint_size_must_match_selected_model(self):
+        (self.root/'config.json').write_text(json.dumps({'model_type': 'vitmatte',
+            'backbone_config': {'num_channels': 4}, 'hidden_size': 384}))
+        (self.root/'model.safetensors').write_bytes(b'test weights')
+        with self.assertRaisesRegex(ValueError, 'size does not match'):
+            resolve_checkpoint(replace(self.s, checkpoint=str(self.root)))
+        _, identity = resolve_checkpoint(replace(self.s, checkpoint=str(self.root), model='small-composition-1k'))
+        self.assertTrue(identity)
+
+    def test_base_binary_is_pinned_and_loads_weights_only(self):
+        from transformers import VitMatteForImageMatting
+        spec = MODEL_SPECS['base-composition-1k']
+        checkpoint = Path('checkpoints/vitmatte')/spec['revision']
+        m = VitMatteModel(replace(self.s, device='cpu'), checkpoint)
+        with patch('sammie.refinement.model.digest', return_value=spec['sha256']), \
+                patch.object(VitMatteForImageMatting, 'from_pretrained',
+                             return_value=(torch.nn.Identity(), {})) as load:
+            m.load()
+            self.assertFalse(load.call_args.kwargs['use_safetensors'])
+            self.assertTrue(load.call_args.kwargs['weights_only'])
+            self.assertTrue(load.call_args.kwargs['local_files_only'])
+        m.close()
+        with patch('sammie.refinement.model.digest', return_value='wrong checksum'):
+            with self.assertRaisesRegex(ValueError, 'verified official'): m.load()
+        m.checkpoint = self.root
+        with self.assertRaisesRegex(ValueError, 'verified official'): m.load()
+        self.assertIsNone(m.model)
+
+    def test_switching_model_invalidates_refinement_without_changing_baseline(self):
+        self.run_pipeline()
+        png = self.root/'matting/00000/0.png'
+        original = png.read_bytes()
+        self.s = replace(self.s, model='small-composition-1k')
+        self.assertIsNone(RefinementCache(self.root).selected(0, 0, self.s, 'validated'))
+        self.assertEqual(self.run_pipeline()['cached_frames'], 0)
+        self.assertEqual(png.read_bytes(), original)
 
     def test_worker_cancel_keeps_dialog_alive_until_cleanup(self):
         from sammie.refinement.ui import RefinementDialog
@@ -314,6 +351,11 @@ class PipelineTests(unittest.TestCase):
         from sammie.refinement.ui import RefinementControls
         model = QComboBox(); model.addItems(['MatAnyone', 'VideoMaMa'])
         controls = RefinementControls(model)
+        self.assertEqual(controls.controls['model'].currentData(), 'base-composition-1k')
+        controls.controls['model'].setCurrentIndex(controls.controls['model'].findData('small-composition-1k'))
+        self.assertEqual(RefinementSettings.from_session(self.manager).model, 'small-composition-1k')
+        controls.load()
+        self.assertEqual(controls.controls['model'].currentData(), 'small-composition-1k')
         self.assertFalse(controls.isChecked())
         self.assertTrue(controls.isHidden())
         model.setCurrentText('VideoMaMa')

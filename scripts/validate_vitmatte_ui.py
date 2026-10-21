@@ -21,10 +21,11 @@ from sammie import core, sammie
 from sammie.settings_manager import initialize_settings
 from sammie.export_workers import SequenceExportWorker
 from sammie.export_formats import ExportSettings
+from sammie.refinement.model import MODEL_SPECS
 import sammie_main
 
 
-def main(root, run_matting=False):
+def main(root, run_matting=False, model=None):
     root=Path(root).resolve()
     if not root.is_relative_to(Path('.test-output').resolve()):
         raise ValueError('Use an isolated .test-output session copy for this validation.')
@@ -42,6 +43,9 @@ def main(root, run_matting=False):
     settings.set_session_setting('in_point',0);settings.set_session_setting('out_point',len(frames)-1)
     settings.set_session_setting('matany_model','VideoMaMa')
     settings.set_session_setting('vitmatte_enabled',True)
+    if model:
+        settings.set_session_setting('vitmatte_model',model)
+        settings.set_session_setting('vitmatte_checkpoint','')
     settings.set_session_setting('sequence_start_frame',1001)
     if run_matting:
         settings.set_session_setting('matany_res',480)
@@ -62,6 +66,7 @@ def main(root, run_matting=False):
         assert window.view_combo.currentText()=='Matting-Matte'
         controls=window.matting_tab.refinement
         assert controls.isVisible() and controls.isChecked()
+        assert controls.controls['model'].currentData()==settings.get_session_setting('vitmatte_model')
         if run_matting:
             window.matting_tab.run_matting_btn.click()  # actual automatic two-model handoff
             assert window.matany_manager.pipeline is None
@@ -90,4 +95,5 @@ def main(root, run_matting=False):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--session',required=True)
     p.add_argument('--run-matting',action='store_true',help='Also execute Run Matting and its automatic refinement handoff')
-    args=p.parse_args();main(args.session,args.run_matting)
+    p.add_argument('--model',choices=MODEL_SPECS,help='Select official model in the copied session')
+    args=p.parse_args();main(args.session,args.run_matting,args.model)

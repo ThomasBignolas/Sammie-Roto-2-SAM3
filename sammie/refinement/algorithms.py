@@ -6,7 +6,7 @@ import numpy as np
 
 @dataclass(frozen=True)
 class RefinementSettings:
-    model: str = 'small-composition-1k'
+    model: str = 'base-composition-1k'
     checkpoint: str = ''
     strength: float = 0.75
     foreground: float = 0.98

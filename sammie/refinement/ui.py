@@ -9,6 +9,7 @@ from sammie import core
 from sammie.settings_manager import get_settings_manager
 from .algorithms import RefinementSettings, PRESETS
 from .pipeline import run_refinement
+from .model import MODEL_SPECS
 
 
 class RefinementControls(QGroupBox):
@@ -24,9 +25,14 @@ class RefinementControls(QGroupBox):
         self.preset = QComboBox()
         self.preset.addItems(['Balanced', 'Fast', 'Quality'])
         form.addRow('Preset:', self.preset)
-        model = QLabel('ViTMatte Small / Composition-1k')
-        model.setWordWrap(True)
+        model = QComboBox()
+        for key, spec in MODEL_SPECS.items():
+            model.addItem(spec['label'], key)
+        model.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        model.setMinimumContentsLength(16)
         model.setToolTip('Official hustvl weights; downloaded automatically on first use.')
+        self.controls['model'] = model
+        model.currentIndexChanged.connect(self.save)
         form.addRow('Model:', model)
         checkpoint = QLineEdit()
         checkpoint.setPlaceholderText('Automatic official download')
@@ -63,6 +69,8 @@ class RefinementControls(QGroupBox):
         ]:
             combo = QComboBox()
             for text, value in choices: combo.addItem(text, value)
+            if key == 'precision':
+                combo.setToolTip('FP32 is recommended. Base BF16 showed substantial alpha differences in validation; compare before using it for final mattes.')
             self.controls[key] = combo
             form.addRow(title, combo)
             combo.currentIndexChanged.connect(self.save)

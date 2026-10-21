@@ -125,7 +125,7 @@ class SessionSettings:
 
     # Optional post-VideoMaMa ViTMatte pass (project-local, OFF by default).
     vitmatte_enabled: bool = False
-    vitmatte_model: str = 'small-composition-1k'
+    vitmatte_model: str = 'base-composition-1k'
     vitmatte_checkpoint: str = ''
     vitmatte_strength: float = 0.75
     vitmatte_foreground: float = 0.98

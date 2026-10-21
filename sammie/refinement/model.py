@@ -7,9 +7,24 @@ import numpy as np
 import requests
 import torch
 
-REPO = 'hustvl/vitmatte-small-composition-1k'
-REVISION = '6a58ad7646403c1df626fbd746900aec7361ea1d'
-WEIGHTS_SHA256 = 'bda9289db1bb6762d978b42d1c62ae3f34daf7497171a347a1d09657efd788cb'
+MODEL_SPECS = {
+    'base-composition-1k': {
+        'label': 'ViTMatte Base (larger) / Composition-1k',
+        'repo': 'hustvl/vitmatte-base-composition-1k',
+        'revision': 'bf486d01a7d9e3dbcc8400f7942835caf0eaf76e',
+        'filename': 'pytorch_model.bin',
+        'sha256': 'b2521bcc4b719fb24611c39605b6642162fd7502e69b3cc846506ca921757b41',
+        'hidden_size': 768,
+    },
+    'small-composition-1k': {
+        'label': 'ViTMatte Small / Composition-1k',
+        'repo': 'hustvl/vitmatte-small-composition-1k',
+        'revision': '6a58ad7646403c1df626fbd746900aec7361ea1d',
+        'filename': 'model.safetensors',
+        'sha256': 'bda9289db1bb6762d978b42d1c62ae3f34daf7497171a347a1d09657efd788cb',
+        'hidden_size': 384,
+    },
+}
 NORMALIZATION = 'official-imagenet-rgb-v1'
 
 
@@ -24,22 +39,25 @@ def check_cancel(cancel):
 
 
 def resolve_checkpoint(settings, progress=lambda message: None, cancel=lambda: False):
-    if settings.model != 'small-composition-1k':
-        raise ValueError('Unsupported ViTMatte model. Select Small / Composition-1k.')
+    if settings.model not in MODEL_SPECS:
+        raise ValueError('Unsupported ViTMatte model. Select Base or Small / Composition-1k.')
+    spec = MODEL_SPECS[settings.model]
     if settings.checkpoint:
         root = Path(settings.checkpoint).expanduser().resolve()
         if not root.is_dir() or not all((root/f).is_file() for f in ('config.json', 'model.safetensors')):
             raise ValueError('Local ViTMatte checkpoint must be a Transformers directory containing config.json and model.safetensors, not a Detectron2 .pth file.')
+        weights = root/'model.safetensors'
     else:
-        root = Path('checkpoints/vitmatte') / REVISION
+        root = Path('checkpoints/vitmatte') / spec['revision']
+        weights = root/spec['filename']
         root.mkdir(parents=True, exist_ok=True)
-        for name in ('config.json', 'preprocessor_config.json', 'model.safetensors'):
+        for name in ('config.json', 'preprocessor_config.json', spec['filename']):
             check_cancel(cancel)
             dest = root/name
             if not dest.exists():
                 part = dest.with_suffix(dest.suffix+'.part')
                 try:
-                    with requests.get(f'https://huggingface.co/{REPO}/resolve/{REVISION}/{name}',
+                    with requests.get(f"https://huggingface.co/{spec['repo']}/resolve/{spec['revision']}/{name}",
                                       stream=True, timeout=(15, 30)) as response:
                         response.raise_for_status()
                         total = int(response.headers.get('Content-Length', 0))
@@ -53,19 +71,21 @@ def resolve_checkpoint(settings, progress=lambda message: None, cancel=lambda: F
                     part.replace(dest)
                 finally:
                     part.unlink(missing_ok=True)
-        progress('Verifying official ViTMatte checkpoint...')
-        if digest(root/'model.safetensors') != WEIGHTS_SHA256:
-            raise ValueError(f'ViTMatte checksum mismatch. Remove {root / "model.safetensors"} and retry the download.')
+        progress(f"Verifying {spec['label']} checkpoint...")
+        if digest(weights) != spec['sha256']:
+            raise ValueError(f'ViTMatte checksum mismatch. Remove {weights} and retry the download.')
     config = json.loads((root/'config.json').read_text())
     if config.get('model_type') != 'vitmatte' or config.get('backbone_config', {}).get('num_channels') != 4:
         raise ValueError('Checkpoint is not a four-channel RGB + trimap ViTMatte model.')
-    identity = digest(root/'model.safetensors') + ':' + digest(root/'config.json') + ':' + NORMALIZATION + ':transformers-5.8.0'
+    if config.get('hidden_size') != spec['hidden_size']:
+        raise ValueError(f"Checkpoint size does not match selected {spec['label']}. Choose the matching model or clear the local checkpoint folder.")
+    identity = digest(weights) + ':' + digest(root/'config.json') + ':' + NORMALIZATION + ':transformers-5.8.0'
     return root, identity
 
 
 class VitMatteModel:
     def __init__(self, settings, checkpoint):
-        self.settings, self.checkpoint = settings, checkpoint
+        self.settings, self.checkpoint = settings, Path(checkpoint)
         self.model = None
         device = settings.device
         if device == 'auto':
@@ -80,9 +100,18 @@ class VitMatteModel:
         except ImportError as e:
             raise RuntimeError('ViTMatte is optional. Run install_vitmatte.bat, then restart Sammie-Roto.') from e
         try:
+            # Base is officially distributed as a PyTorch state dictionary. Only
+            # accept that binary in its pinned, checksum-verified download folder.
+            spec = MODEL_SPECS[self.settings.model]
+            safe = bool(self.settings.checkpoint) or spec['filename'].endswith('.safetensors')
+            if not safe:
+                expected = (Path('checkpoints/vitmatte')/spec['revision']).resolve()
+                if (self.checkpoint.resolve() != expected
+                        or digest(expected/spec['filename']) != spec['sha256']):
+                    raise ValueError('Binary ViTMatte weights must be the verified official download; local custom checkpoints require safetensors.')
             model, info = VitMatteForImageMatting.from_pretrained(
-                str(self.checkpoint), local_files_only=True, use_safetensors=True,
-                output_loading_info=True, dtype=torch.float32)
+                str(self.checkpoint), local_files_only=True, use_safetensors=safe,
+                weights_only=True, output_loading_info=True, dtype=torch.float32)
             if any(info.get(k) for k in ('missing_keys', 'unexpected_keys', 'mismatched_keys', 'error_msgs')):
                 raise ValueError(f'Checkpoint architecture mismatch: {info}')
             self.model = model.eval().requires_grad_(False).to(self.device)

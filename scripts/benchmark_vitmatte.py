@@ -17,6 +17,7 @@ import torch
 from sammie.refinement.algorithms import RefinementSettings, PRESETS, alpha_float
 from sammie.refinement.cache import load_base
 from sammie.refinement.pipeline import run_refinement
+from sammie.refinement.model import MODEL_SPECS
 
 
 def extract_project(project, root, start, count):
@@ -147,12 +148,13 @@ if __name__ == '__main__':
     p.add_argument('--preset', choices=PRESETS, default='Balanced')
     p.add_argument('--device', choices=['auto','cuda','cpu'], default='auto')
     p.add_argument('--precision', choices=['fp32','bf16'], default='fp32')
+    p.add_argument('--model', choices=MODEL_SPECS, default=RefinementSettings().model)
     p.add_argument('--ground-truth')
     args = p.parse_args()
     if args.frames < 1 or args.start < 0:
         p.error('Frame count must be positive and start must be nonnegative')
     if args.project:
         args.session = extract_project(args.project, Path(args.output)/'input-session', args.start, args.frames)
-    s = replace(RefinementSettings(), **PRESETS[args.preset], device=args.device, precision=args.precision)
+    s = replace(RefinementSettings(), **PRESETS[args.preset], device=args.device, precision=args.precision, model=args.model)
     r = benchmark(args.session, args.output, args.start, args.frames, s, args.ground_truth)
     print(json.dumps({k:{f:v for f,v in run.items() if f not in ('frames','settings')} for k,run in r['runs'].items()}, indent=2))

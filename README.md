@@ -2,7 +2,7 @@
 
 This development version adds Meta's official SAM 3 and SAM 3.1 video predictors to the existing Sammie-Roto interface. SAM 2.1, MatAnyone, projects, image sequences and exports remain available.
 
-**ViTMatte after VideoMaMa:** use branch `feature/vitmatte-refinement`, run `install_vitmatte.bat` after installing the application, then launch `run_sam3.bat`. In **Matting → VideoMaMa**, check **ViTMatte Edge Refinement**. Use **Refine cached mattes / Resume** for existing projects. Original mattes remain available, with A/B/C preview and export selection. See the [ViTMatte workflow, presets and limitations](docs/VITMATTE.md) and [executed validation results](docs/VITMATTE_VALIDATION.md). Refinement is OFF by default.
+**ViTMatte after VideoMaMa:** use branch `feature/vitmatte-refinement`, run `install_vitmatte.bat` after installing the application, then launch `run_sam3.bat`. In **Matting → VideoMaMa**, check **ViTMatte Edge Refinement** and select **ViTMatte Base (larger)**, the default model for new projects. Use **Refine cached mattes / Resume** for existing projects. Original mattes remain available, with A/B/C preview and export selection. See the [ViTMatte workflow, presets and limitations](docs/VITMATTE.md) and [executed validation results](docs/VITMATTE_VALIDATION.md). Refinement is OFF by default.
 
 **Windows / NVIDIA quick start:** install [Git for Windows](https://git-scm.com/downloads/win), obtain this repository's `feature/vitmatte-refinement` branch, then run these files in order:
 

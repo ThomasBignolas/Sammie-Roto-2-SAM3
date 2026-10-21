@@ -102,7 +102,7 @@ def run_refinement(root, frame_range, settings, extension='png', progress=lambda
                                      'width': rgb.shape[1], 'height': rgb.shape[0]})
             progress(index+1, len(jobs), f'Refined frame {frame}, object {oid}')
         check_cancel(cancel)
-        files = [Path(checkpoint)/name for name in ('config.json', 'model.safetensors')]
+        files = [Path(checkpoint)/name for name in ('config.json', 'model.safetensors', 'pytorch_model.bin')]
         model_files = {str(p.resolve()): stamp(p) for p in files if p.is_file()}
         cache.publish(settings, entries, inputs, model_identity, model_files)
         report['seconds'] = time.perf_counter()-begin

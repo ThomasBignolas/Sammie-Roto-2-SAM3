@@ -5,6 +5,7 @@ normal downloader opens if absent. Reports measured timings, not accuracy.
 """
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+import argparse
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -21,11 +22,11 @@ from sammie import core
 from sammie.matting import VideoMaMaManager
 from sammie.settings_manager import initialize_settings
 from sammie.refinement.algorithms import RefinementSettings
-from sammie.refinement.model import VitMatteModel, resolve_checkpoint
+from sammie.refinement.model import MODEL_SPECS, VitMatteModel, resolve_checkpoint
 from sammie.refinement.pipeline import run_refinement
 
 
-def main():
+def main(model_name=RefinementSettings().model):
     app = QApplication.instance() or QApplication([])
     root = Path('.test-output').resolve()/('vitmatte-gpu-'+uuid.uuid4().hex[:8])
     root.mkdir(parents=True)
@@ -38,6 +39,7 @@ def main():
     manager.set_session_setting('matany_chunk',3)
     manager.set_session_setting('matany_overlap',1)
     manager.set_session_setting('vitmatte_enabled',True)
+    manager.set_session_setting('vitmatte_model',model_name)
     manager.set_session_setting('vitmatte_short_edge',720)
     (root/'frames').mkdir()
     count = 4
@@ -90,15 +92,21 @@ def main():
     for device,precision in [('cuda','fp32'),('cuda','bf16'),('cpu','fp32')]:
         m=VitMatteModel(replace(config,device=device,precision=precision),checkpoint)
         start=time.perf_counter()
-        try: a=m.predict(rgb,tri)
+        try:
+            a=m.predict(rgb,tri)
+            parameters=sum(p.numel() for p in m.model.parameters())
         finally: m.close()
         if reference is None: reference=a
         comparisons[device+'-'+precision]={'seconds_including_load':time.perf_counter()-start,
-            'mae_vs_cuda_fp32':float(np.abs(a-reference).mean()),'max_error':float(np.abs(a-reference).max())}
+            'parameters':parameters, 'mae_vs_cuda_fp32':float(np.abs(a-reference).mean()),
+            'max_error':float(np.abs(a-reference).max())}
     report={'hardware':torch.cuda.get_device_name(),'videomama':baseline,'refinement':result,'precision':comparisons}
     (root/'results.json').write_text(json.dumps(report,indent=2))
     print(json.dumps(report,indent=2));print('Artifacts:',root)
     return root
 
 
-if __name__=='__main__': main()
+if __name__=='__main__':
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--model',choices=MODEL_SPECS,default=RefinementSettings().model)
+    main(parser.parse_args().model)
