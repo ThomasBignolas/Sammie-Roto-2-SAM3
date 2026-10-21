@@ -1,0 +1,152 @@
+{
+  "date": "2026-10-21",
+  "gpu": "NVIDIA GeForce RTX 5060 Ti 16 GB",
+  "driver": "610.62",
+  "automated_tests_passed": 23,
+  "reports": {
+    "gpu-89426026": {
+      "gpu": "NVIDIA GeForce RTX 5060 Ti",
+      "torch": "2.11.0+cu130",
+      "source": "example_dance.mp4 first six frames resized to 1920x1080",
+      "sam2": {
+        "model": "Base",
+        "load_seconds": 0.871725199976936,
+        "tracking_seconds": 0.7448751000338234,
+        "frames_per_second": 8.055041710653976,
+        "peak_allocated_mib": 774.43994140625,
+        "objects": 2,
+        "forward_backward_correction_preview_replay": "passed"
+      },
+      "matanyone": {
+        "working_short_edge": 720,
+        "seconds_including_load": 4.921725300024264,
+        "peak_allocated_mib": 1271.56396484375,
+        "source_size_alpha_frames": 6
+      },
+      "sam3_trained_weights": "NOT TESTED: gated checkpoint access unavailable"
+    },
+    "trained-bc7e30fc": {
+      "model": "SAM 3",
+      "trained_checkpoint": true,
+      "passed": true,
+      "fixture": "examples/example_dance.mp4",
+      "frames": 6,
+      "source_size": [
+        1920,
+        1080
+      ],
+      "load_seconds": 7.790129499975592,
+      "box_detections": 1,
+      "text_detections": 4,
+      "tracking_seconds": 1.682689500041306,
+      "frames_per_second": 3.5657202352856627,
+      "sam_gpu": {
+        "allocated_mib": 5161,
+        "reserved_mib": 6166,
+        "peak_mib": 5784,
+        "free_mib": 8962,
+        "total_mib": 16310
+      },
+      "matting_peak_allocated_mib": 1270.72802734375
+    },
+    "trained-f87e3c5e": {
+      "model": "SAM 3.1",
+      "trained_checkpoint": true,
+      "passed": true,
+      "fixture": "examples/example_dance.mp4",
+      "frames": 6,
+      "source_size": [
+        1920,
+        1080
+      ],
+      "load_seconds": 10.773763200035319,
+      "box_detections": 1,
+      "text_detections": 4,
+      "tracking_seconds": 1.7921650999924168,
+      "frames_per_second": 3.3479058374841624,
+      "sam_gpu": {
+        "allocated_mib": 5653,
+        "reserved_mib": 6896,
+        "peak_mib": 6426,
+        "free_mib": 8234,
+        "total_mib": 16310
+      },
+      "matting_peak_allocated_mib": 1270.72802734375
+    },
+    "trained-b528df2f": {
+      "model": "SAM 3.1",
+      "trained_checkpoint": true,
+      "passed": true,
+      "fixture": "examples/example_dance.mp4",
+      "frames": 60,
+      "source_size": [
+        1920,
+        1080
+      ],
+      "load_seconds": 11.097826100012753,
+      "box_detections": 1,
+      "text_detections": 4,
+      "tracking_seconds": 26.678937800053973,
+      "frames_per_second": 2.248965099348094,
+      "sam_gpu": {
+        "allocated_mib": 6488,
+        "reserved_mib": 7966,
+        "peak_mib": 7260,
+        "free_mib": 7164,
+        "total_mib": 16310
+      },
+      "matting_peak_allocated_mib": 1279.26708984375
+    },
+    "trained-573091af": {
+      "model": "SAM 3",
+      "trained_checkpoint": true,
+      "passed": true,
+      "fixture": "examples/example_dance.mp4",
+      "frames": 60,
+      "source_size": [
+        1920,
+        1080
+      ],
+      "load_seconds": 7.272177100006957,
+      "box_detections": 1,
+      "text_detections": 4,
+      "tracking_seconds": 25.86365630000364,
+      "frames_per_second": 2.3198576142535408,
+      "sam_gpu": {
+        "allocated_mib": 5533,
+        "reserved_mib": 6440,
+        "peak_mib": 6159,
+        "free_mib": 8688,
+        "total_mib": 16310
+      },
+      "matting_peak_allocated_mib": 1279.26708984375,
+      "tracking_after_matting_restore": true
+    },
+    "trained-27662166": {
+      "model": "SAM 3.1",
+      "trained_checkpoint": true,
+      "passed": true,
+      "fixture": "examples/example_dance.mp4",
+      "frames": 6,
+      "source_size": [
+        1920,
+        1080
+      ],
+      "load_seconds": 10.68427349999547,
+      "box_detections": 1,
+      "text_detections": 4,
+      "tracking_seconds": 1.7794614000013098,
+      "frames_per_second": 3.371806772541165,
+      "sam_gpu": {
+        "allocated_mib": 5653,
+        "reserved_mib": 6896,
+        "peak_mib": 6426,
+        "free_mib": 8234,
+        "total_mib": 16310
+      },
+      "matting_peak_allocated_mib": 1270.72802734375,
+      "tracking_after_matting_restore": true
+    }
+  },
+  "scope": "Short fixture validation; no ground-truth quality score or arbitrary long-clip memory bound."
+}

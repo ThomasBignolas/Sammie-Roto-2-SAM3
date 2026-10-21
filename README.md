@@ -1,4 +1,24 @@
-# Sammie-Roto 2
+# Sammie-Roto 2 with SAM 3 / SAM 3.1
+
+This development version adds Meta's official SAM 3 and SAM 3.1 video predictors to the existing Sammie-Roto interface. SAM 2.1, MatAnyone, projects, image sequences and exports remain available.
+
+**Windows / NVIDIA quick start:** install [Git for Windows](https://git-scm.com/downloads/win), obtain this repository's `feature/sam3-backends` branch, then run these files in order:
+
+1. `install_sam3.bat` — creates the application and isolated SAM 3 environments.
+2. `setup_models.bat` — downloads the official checkpoints after your Hugging Face access is approved.
+3. `run_sam3.bat` — launches the upgraded application directly.
+
+Load footage, select **SAM 3** or **SAM 3.1**, click **Load Model**, then add points or use **Find objects**. Select the detected instances, track, refine in the existing Matting tab, and export.
+
+Read the [Windows setup and workflow](docs/SAM3_WINDOWS.md), [architecture and compatibility](docs/SAM3_ARCHITECTURE.md), [test results and limitations](docs/VALIDATION.md), and [model license notes](docs/MODEL_LICENSES.md).
+
+**Validation status:** 23 automated tests and real trained-checkpoint CUDA tests pass on a 16 GB RTX 5060 Ti. SAM 2, SAM 3 and SAM 3.1 were exercised; SAM 3 / 3.1 tests include text/box detection, independent objects, bidirectional tracking, corrections, sequential MatAnyone refinement and full-resolution alpha exports. The actual MainWindow controls were also tested with both SAM 3 models and a switch back to SAM 2. See the validation document for measured results and limits; arbitrarily long shots and production-quality roto are not guaranteed by these tests.
+
+Use `run_sam3.bat` for this version: the original upstream launcher/update mechanism targets upstream releases. The original project documentation follows.
+
+---
+
+# Original Sammie-Roto 2 documentation
 **S**egment **A**nything **M**odel with **M**atting **I**ntegrated **E**legantly
 
 ![Sammie-Roto 2 screenshot](https://github.com/user-attachments/assets/bc2c99c8-4039-49f1-94ed-65f104a83e8d)

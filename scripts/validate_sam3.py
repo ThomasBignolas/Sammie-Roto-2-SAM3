@@ -131,9 +131,16 @@ def main():
             for frame in range(frames):
                 image = cv2.imread(str(destination/f'mask.{1001+frame:04d}.png'), cv2.IMREAD_UNCHANGED)
                 assert image is not None and image.shape == (1080, 1920, 4)
+                if frame == 0:
+                    assert image[:, :, 3].min() == 0 and image[:, :, 3].max() > 0
         # Restoring after matting must recover the selected identities and all prompts.
         backend.replay_points(points)
         assert backend.journal == points and set(backend.id_map.values()) == {0, 1}
+        resumed = list(backend.iter_masks(middle, 1))
+        assert [frame for frame, _ in resumed] == [middle, middle+1]
+        assert all(set(masks) == {0, 1} for _, masks in resumed)
+        results['restored_sam_gpu'] = dict(backend.gpu)
+        results['tracking_after_matting_restore'] = True
         results['passed'] = True
     except Exception as error:
         results['error'] = f'{type(error).__name__}: {error}'

@@ -1,0 +1,15 @@
+{
+  "source_commit": "7f473cfd983d5eb43040ff608f66bff0d7bdcb53",
+  "sam3": {
+    "repo": "facebook/sam3",
+    "revision": "3c879f39826c281e95690f02c7821c4de09afae7",
+    "filename": "sam3.pt",
+    "bytes": 3450062241
+  },
+  "sam3.1": {
+    "repo": "facebook/sam3.1",
+    "revision": "daa63191845a41281374e725f4c9e51c7a824460",
+    "filename": "sam3.1_multiplex.pt",
+    "bytes": 3502755717
+  }
+}

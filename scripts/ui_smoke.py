@@ -35,6 +35,7 @@ def main():
             patch.object(sammie_main.MainWindow, '_deferred_init'), \
             patch.object(sammie_main.MainWindow, '_setup_console_redirect'), \
             patch.object(sammie_main, 'select_candidates', side_effect=lambda _, masks, frame: list(masks)[:2]), \
+            patch.object(sammie_main.QMessageBox, 'question', return_value=sammie_main.QMessageBox.Yes), \
             patch.object(sammie_main.QMessageBox, 'warning', side_effect=AssertionError('Unexpected UI error dialog')):
         window = sammie_main.MainWindow()
         window.resize(1400, 1000)
@@ -64,6 +65,21 @@ def main():
                 app.processEvents()
                 window.grab().save(str(root/(name.replace(' ', '')+'.png')))
                 print(name, 'MainWindow single-image selection, correction and tracking: PASSED')
+                window.clear_all_points()
+                for oid, x in ((0, .8), (1, .27)):
+                    window.segmentation_tab.object_spinbox.setValue(oid)
+                    window.add_point_from_click(int(core.VideoInfo.width*x), core.VideoInfo.height//2, True)
+                window.track_objects()
+                for oid in (0, 1):
+                    mask = cv2.imread(str(Path(core.mask_dir)/f'00000/{oid}.png'), 0)
+                    assert mask is not None and np.count_nonzero(mask) > 100
+                window.clear_all_points()
+                controls.text.clear()
+                controls.box.setChecked(True)
+                window.add_point_from_click(core.VideoInfo.width//4, core.VideoInfo.height//5, True)
+                window.add_point_from_click(core.VideoInfo.width*3//4, core.VideoInfo.height*9//10, True)
+                assert window.point_manager.points and all(p.get('kind') == 'sam3_seed' for p in window.point_manager.points)
+                print(name, 'independent manual objects and UI box selection: PASSED')
             window.clear_all_points()
             window.segmentation_tab.sam_model_combo.setCurrentText('Base')
             window.segmentation_tab.sam_model_btn.click()
