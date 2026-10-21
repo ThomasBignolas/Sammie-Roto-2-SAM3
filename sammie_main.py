@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QFileDialog, QVBoxLayout, QHBoxLayout, 
     QGridLayout, QWidget, QPushButton, QLabel, QStatusBar, QSlider, 
     QTabWidget, QSpinBox, QComboBox, QSplitter, QGroupBox, QTextEdit,
-    QCheckBox, QLineEdit, QMessageBox, QDialog, QProgressDialog
+    QCheckBox, QLineEdit, QMessageBox, QDialog, QProgressDialog, QScrollArea
 )
 from PySide6.QtGui import (
     QAction, QShortcut, QKeySequence, QTextCursor, QIcon, QPixmap, QFont, QDesktopServices
@@ -515,6 +515,9 @@ class MattingTab(QWidget):
 
         # Parameters
         self._create_parameter_sliders(layout)
+        from sammie.refinement.ui import RefinementControls
+        self.refinement = RefinementControls(self.matany_model_combo)
+        layout.addWidget(self.refinement)
         
         layout.addStretch()
     
@@ -741,6 +744,7 @@ class MattingTab(QWidget):
         shrink_grow = settings_mgr.get_session_setting("matany_grow", 0)
         self.shrink_grow_slider.setValue(shrink_grow)
         self.shrink_grow_value.setText(str(shrink_grow))
+        self.refinement.load()
 
     def update_matting_status(self, is_propagated):
         """Update the Run Matting button text based on propagation state"""
@@ -1102,7 +1106,11 @@ class Sidebar(QWidget):
         self.removal_tab = ObjectRemovalTab()
         
         self.tab_widget.addTab(self.segmentation_tab, "Segmentation")
-        self.tab_widget.addTab(self.matting_tab, "Matting")
+        matting_scroll = QScrollArea()
+        matting_scroll.setWidgetResizable(True)
+        matting_scroll.setWidget(self.matting_tab)
+        matting_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.tab_widget.addTab(matting_scroll, "Matting")
         self.tab_widget.addTab(self.removal_tab, "Object Removal")
         
         layout.addWidget(self.tab_widget)
@@ -1290,6 +1298,8 @@ class MainWindow(QMainWindow):
             # Connect matting tab buttons
             matting_tab.run_matting_btn.clicked.connect(self.run_matting)
             matting_tab.clear_matting_btn.clicked.connect(self.clear_matting)
+            matting_tab.refinement.run.clicked.connect(self.run_vitmatte)
+            matting_tab.refinement.changed.connect(self._update_current_frame_display)
 
             # Connect postprocessing tab sliders
             matting_tab.shrink_grow_slider.valueChanged.connect(lambda _: self._update_current_frame_display())
@@ -1811,6 +1821,8 @@ class MainWindow(QMainWindow):
         # Get the tab widget to determine which tab is selected
         tab_widget = self.sidebar.tab_widget
         current_tab = tab_widget.widget(index)
+        if isinstance(current_tab, QScrollArea):
+            current_tab = current_tab.widget()
         
         # Determine the appropriate view based on the current tab
         if current_tab == self.sidebar.segmentation_tab:
@@ -2427,7 +2439,10 @@ class MainWindow(QMainWindow):
                     return
                 QApplication.processEvents()
                 progress.close()
-                self.matany_manager.run_matting(self.point_manager.points, parent_window=self, combined=combined)
+                success = self.matany_manager.run_matting(self.point_manager.points, parent_window=self, combined=combined)
+                if success and matting_model == 'VideoMaMa' and self.settings_mgr.get_session_setting('vitmatte_enabled', False):
+                    self.matany_manager.unload_matting_model()
+                    self.run_vitmatte(manage_models=False)
             except Exception as e:
                 if "out of memory" in str(e):
                     show_message_dialog(self, title="Error", message="An out of memory error occurred. Please try again with lower settings." , type="warning")
@@ -2448,6 +2463,39 @@ class MainWindow(QMainWindow):
                 progress.close()
         else:
             print("Points must be added on the Segmentation tab before matting")
+
+    def run_vitmatte(self, checked=False, manage_models=True):
+        """Refine cached VideoMaMa results without rerunning segmentation or matting."""
+        from sammie.refinement.algorithms import RefinementSettings
+        from sammie.refinement.ui import RefinementDialog
+        if self.settings_mgr.get_session_setting('matany_model') != 'VideoMaMa':
+            return
+        try:
+            source_path = str(self.settings_mgr.get_session_setting('video_file_path', '')).lower()
+            if source_path.endswith(('.exr', '.hdr')):
+                raise ValueError('ViTMatte needs display-referred RGB. Export an sRGB/Rec.709 PNG or video proxy of linear EXR/HDR footage, then import that proxy for matting. Alpha export remains linear.')
+            settings = RefinementSettings.from_session(self.settings_mgr)
+            if manage_models:
+                self.sam_manager.offload_model_to_cpu()
+                self.matany_manager.unload_matting_model()
+            dialog = RefinementDialog(self, settings)
+            report, failure = dialog.execute()
+            if failure:
+                show_message_dialog(self, title='ViTMatte refinement', message=failure, type='warning')
+            elif report:
+                peak = report.get('peak_allocated_mib')
+                message = f"Finished {len(report['frames'])} object frames in {report['seconds']:.1f}s."
+                if peak is not None:
+                    message += f' Peak allocated GPU memory: {peak:.0f} MiB.'
+                if report['legacy_alpha_frames']:
+                    message += ' Source mattes include existing 8-bit PNGs; their lost precision cannot be recovered.'
+                self.matting_tab.refinement.status.setText(message)
+        except Exception as e:
+            show_message_dialog(self, title='ViTMatte refinement', message=str(e), type='warning')
+        finally:
+            if manage_models:
+                self.sam_manager.load_model_to_device()
+            self._update_current_frame_display()
 
     def run_object_removal(self):
         """Run object removal process"""

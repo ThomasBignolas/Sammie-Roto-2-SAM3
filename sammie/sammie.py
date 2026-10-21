@@ -126,12 +126,17 @@ def _convert_to_qpixmap(image):
     return QPixmap.fromImage(q_image)
 
 
-def _get_display_mask(frame_number, points, object_id_filter, folder, postprocess_fn):
+def _get_display_mask(frame_number, points, object_id_filter, folder, postprocess_fn, float_alpha=False):
     """
     Load the combined mask for a view and postprocess it. Returns None (without
     calling postprocess_fn) if no mask exists for this frame/object filter —
     callers are responsible for deciding what to do in that case.
     """
+    if folder == core.matting_dir:
+        from sammie.refinement.display import selected_alpha
+        alpha = selected_alpha(frame_number, points, object_id_filter)
+        if alpha is not None:
+            return alpha if float_alpha else np.round(alpha*255).astype(np.uint8)
     mask = core.load_masks_for_frame(frame_number, points, return_combined=True,
                                       object_id_filter=object_id_filter, folder=folder)
     if mask is None:
@@ -265,7 +270,8 @@ def _handle_segmentation_alpha_view(frame_number, view_options, points, return_n
 
 def _handle_matting_matte_view(frame_number, view_options, points, return_numpy=False, object_id_filter=None):
     """Handle Matting-Matte view"""
-    mask = _get_display_mask(frame_number, points, object_id_filter, core.matting_dir, core.apply_matany_postprocessing)
+    mask = _get_display_mask(frame_number, points, object_id_filter, core.matting_dir, core.apply_matany_postprocessing,
+                             float_alpha=return_numpy and view_options.get('float_alpha', False))
     if mask is None:
         return None
 

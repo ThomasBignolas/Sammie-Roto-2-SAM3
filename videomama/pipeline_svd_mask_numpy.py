@@ -133,7 +133,7 @@ class VideoInferencePipeline:
                 torch.cuda.empty_cache()
 
     def run(self, cond_frames, mask_frames, seed=42, fps=7, motion_bucket_id=127,
-            noise_aug_strength=0.0, pbar=None, progress_callback=None):
+            noise_aug_strength=0.0, pbar=None, progress_callback=None, return_float=False):
         """
         Runs the core inference process on a sequence of conditioning and mask frames.
 
@@ -146,9 +146,11 @@ class VideoInferencePipeline:
             noise_aug_strength (float): Noise augmentation strength.
             pbar: Optional ComfyUI ProgressBar for progress tracking.
             progress_callback: Optional callable(step, total_steps, description) for UI updates.
+            return_float: Return float32 RGB alpha in [0,1] before quantization for
+                optional refinement. False preserves the original uint8 output.
 
         Returns:
-            list[np.ndarray]: A list of the generated video frames as RGB uint8 arrays.
+            list[np.ndarray]: RGB uint8 arrays, or float32 RGB alpha if return_float.
         """
         def _notify(step, desc):
             """Notify progress via both pbar (ComfyUI) and callback (Sammie)"""
@@ -157,8 +159,9 @@ class VideoInferencePipeline:
             if progress_callback is not None:
                 try:
                     progress_callback(step, 5, desc)
-                except Exception:
-                    pass
+                except RuntimeError as exc:
+                    if str(exc) == 'USER_CANCELLED':
+                        raise
 
         # --- 1. Prepare Tensors ---
         cond_video_tensor = self._cv2_to_tensor(cond_frames).to(self.device)
@@ -257,7 +260,9 @@ class VideoInferencePipeline:
             output_frames = []
             for frame in video_tensor:
                 # frame: (3, H, W), float [0, 1]
-                arr = (frame.permute(1, 2, 0).numpy() * 255).clip(0, 255).astype(np.uint8)
+                arr = frame.permute(1, 2, 0).numpy()
+                if not return_float:
+                    arr = (arr * 255).clip(0, 255).astype(np.uint8)
                 output_frames.append(arr)
             return output_frames
 

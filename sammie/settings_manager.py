@@ -123,6 +123,26 @@ class SessionSettings:
     matany_chunk: int = 16
     matany_combined: bool = False
 
+    # Optional post-VideoMaMa ViTMatte pass (project-local, OFF by default).
+    vitmatte_enabled: bool = False
+    vitmatte_model: str = 'small-composition-1k'
+    vitmatte_checkpoint: str = ''
+    vitmatte_strength: float = 0.75
+    vitmatte_foreground: float = 0.98
+    vitmatte_background: float = 0.02
+    vitmatte_radius: int = 12
+    vitmatte_expansion: int = 4
+    vitmatte_feather: int = 3
+    vitmatte_short_edge: int = 1080
+    vitmatte_tile_size: int = 768
+    vitmatte_overlap: int = 128
+    vitmatte_temporal: bool = True
+    vitmatte_temporal_strength: float = 0.65
+    vitmatte_precision: str = 'fp32'
+    vitmatte_device: str = 'auto'
+    vitmatte_debug: bool = False
+    vitmatte_view: str = 'validated'
+
     # Object removal parameters
     removal_method: str = "MiniMax-Remover"
     inpaint_grow: int = 0

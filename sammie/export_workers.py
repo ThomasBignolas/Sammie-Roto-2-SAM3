@@ -311,6 +311,16 @@ class SequenceExportWorker(BaseExportWorker):
         
         # Get all unique object IDs
         all_object_ids = sorted(set(point['object_id'] for point in self.points))
+        # The optional pass retains VideoMaMa's combined object 0 even when the
+        # source prompt IDs do not include 0. Preserve the disabled export path.
+        if self.settings.output_type.startswith('Matting-'):
+            from sammie.settings_manager import get_settings_manager
+            manager = get_settings_manager()
+            if (manager.get_session_setting('vitmatte_enabled', False)
+                    and manager.get_session_setting('matany_model') == 'VideoMaMa'
+                    and manager.get_session_setting('matany_combined', False)
+                    and len(all_object_ids) > 1):
+                all_object_ids = [0]
         if not all_object_ids:
             self.finished.emit(False, "No objects found to export")
             return
@@ -337,6 +347,7 @@ class SequenceExportWorker(BaseExportWorker):
                 view_options = self._get_view_options(self.settings.output_type, self.settings.antialias)
                 
                 # Export each object as a layer
+                view_options['float_alpha'] = True
                 for obj_id in all_object_ids:
                     mask_array = sammie.update_image(
                         frame_num, view_options, self.points,

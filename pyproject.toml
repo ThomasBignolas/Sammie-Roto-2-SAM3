@@ -17,6 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+vitmatte = ["transformers==5.8.0"]
 macos = ["torch==2.14.0 ; sys_platform == 'darwin'", "torchvision==0.29.0 ; sys_platform == 'darwin'"]
 cpu   = ["torch==2.11.0", "torchvision==0.26.0"]
 cu126 = ["torch==2.11.0", "torchvision==0.26.0"]

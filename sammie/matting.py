@@ -161,6 +161,10 @@ class MattingManager(core.CallbackMixin):
         import shutil
         if os.path.exists(core.matting_dir):
             shutil.rmtree(core.matting_dir)
+        for name in ('matting_float', 'vitmatte'):
+            path = os.path.join(core.temp_dir, name)
+            if os.path.isdir(path):
+                shutil.rmtree(path)
         os.makedirs(core.matting_dir)
         self.propagated = False
         print("Matting data cleared")
@@ -634,6 +638,10 @@ class VideoMaMaManager(MattingManager):
 
     BACKEND = "videomama"
 
+    def __init__(self):
+        super().__init__()
+        self.pipeline = None
+
     def unload_matting_model(self):
         """Unload the VideoMaMa pipeline and free VRAM"""
         if self.pipeline is not None:
@@ -944,6 +952,19 @@ class VideoMaMaManager(MattingManager):
         display_update_frequency = settings_mgr.get_app_setting("display_update_frequency", 5)
  
         # Original frame dimensions for restoring output
+        float_output = settings_mgr.get_session_setting('vitmatte_enabled', False)
+        from sammie.refinement.cache import save_base, RefinementCache
+        RefinementCache(core.temp_dir).invalidate()
+
+        def save_alpha(frame, alpha):
+            filename = os.path.join(core.matting_dir, f'{frame:05d}', f'{object_id}.png')
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            png = (alpha*255).clip(0, 255).astype(np.uint8) if float_output else alpha
+            if not cv2.imwrite(filename, png):
+                raise OSError(f'Cannot write VideoMaMa alpha: {filename}')
+            if float_output:
+                source = os.path.join(core.frames_dir, f'{frame:05d}.{extension}')
+                save_base(core.temp_dir, frame, object_id, alpha, source, filename)
         first_frame_path = os.path.join(core.frames_dir, f"{start_frame:05d}.{extension}")
         first_frame_img = cv2.imread(first_frame_path)
         if first_frame_img is not None:
@@ -1038,6 +1059,7 @@ class VideoMaMaManager(MattingManager):
                         mask_frames=mask_frames,
                         seed=42,
                         progress_callback=_on_pipeline_progress,
+                        return_float=float_output,
                     )
             except RuntimeError as e:
                 if str(e) == "USER_CANCELLED":
@@ -1056,6 +1078,8 @@ class VideoMaMaManager(MattingManager):
             previous_overlap_masks = []
             for frame_out in output_frames[-overlap:]:
                 alpha_out = cv2.cvtColor(frame_out, cv2.COLOR_RGB2GRAY)
+                if float_output:
+                    alpha_out = (alpha_out*255).clip(0, 255).astype(np.uint8)
                 previous_overlap_masks.append(alpha_out)
             # -----------------------------------------
  
@@ -1077,11 +1101,10 @@ class VideoMaMaManager(MattingManager):
                     blended = (
                         (1.0 - new_weight) * prev_boundary_alphas[i].astype(np.float32)
                         + new_weight * new_alpha.astype(np.float32)
-                    ).clip(0, 255).astype(np.uint8)
+                    )
+                    blended = blended.clip(0, 1).astype(np.float32) if float_output else blended.clip(0, 255).astype(np.uint8)
                     abs_blend_frame = abs_start + i
-                    mat_filename = os.path.join(core.matting_dir, f"{abs_blend_frame:05d}", f"{object_id}.png")
-                    os.makedirs(os.path.dirname(mat_filename), exist_ok=True)
-                    cv2.imwrite(mat_filename, blended)
+                    save_alpha(abs_blend_frame, blended)
             # -----------------------------------------
 
             # Collect the last `overlap` committed alphas (original resolution) for the
@@ -1104,9 +1127,7 @@ class VideoMaMaManager(MattingManager):
                 if i >= len(committed_output) - overlap:
                     current_boundary_alphas.append(final_alpha.copy())
  
-                mat_filename = os.path.join(core.matting_dir, f"{abs_frame:05d}", f"{object_id}.png")
-                os.makedirs(os.path.dirname(mat_filename), exist_ok=True)
-                cv2.imwrite(mat_filename, final_alpha)
+                save_alpha(abs_frame, final_alpha)
  
                 if abs_frame % display_update_frequency == 0:
                     try:
