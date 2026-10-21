@@ -104,6 +104,7 @@ class SessionSettings:
     antialias: bool = False
     show_removal_mask: bool = True
     bgcolor: tuple = (0, 255, 0)  # RGB green
+    background_style: str = 'solid'
     show_all_points: bool = True  # If True, show points from all frames
     
     # Segmentation parameters
@@ -142,6 +143,13 @@ class SessionSettings:
     vitmatte_device: str = 'auto'
     vitmatte_debug: bool = False
     vitmatte_view: str = 'validated'
+
+    # Optional AOV generation, independent of segmentation and matting.
+    aov_settings: dict = field(default_factory=dict)
+    aov_start_number: int = 0
+    aov_include_plate: bool = True
+    aov_include_mattes: bool = True
+    aov_matte_source: str = 'matting'
 
     # Object removal parameters
     removal_method: str = "MiniMax-Remover"
@@ -364,6 +372,7 @@ class SettingsManager:
             'show_outlines': self.session_settings.show_outlines,
             'antialias': self.session_settings.antialias,
             'bgcolor': self.session_settings.bgcolor,
+            'background_style': self.session_settings.background_style,
             'show_removal_mask': self.session_settings.show_removal_mask
         }
     

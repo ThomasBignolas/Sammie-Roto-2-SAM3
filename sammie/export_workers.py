@@ -52,6 +52,8 @@ class BaseExportWorker(QThread):
             bgcolor = settings_mgr.get_session_setting("bgcolor", (0, 255, 0))
         
         view_options = {'view_mode': output_type}
+        if settings_mgr and output_type.endswith('-BGcolor'):
+            view_options['background_style'] = settings_mgr.get_session_setting('background_style', 'solid')
         
         if output_type.startswith('Segmentation-'):
             view_options['antialias'] = antialias

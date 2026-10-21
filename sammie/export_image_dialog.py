@@ -265,6 +265,7 @@ class ImageExportDialog(QDialog):
             return {
                 'view_mode': 'Segmentation-BGcolor',
                 'antialias': antialias,
+                'background_style': settings_mgr.get_session_setting('background_style', 'solid') if settings_mgr else 'solid',
                 'bgcolor': bgcolor
             }
         elif output_type == 'Matting-Matte':
@@ -278,6 +279,7 @@ class ImageExportDialog(QDialog):
         elif output_type == 'Matting-BGcolor':
             return {
                 'view_mode': 'Matting-BGcolor',
+                'background_style': settings_mgr.get_session_setting('background_style', 'solid') if settings_mgr else 'solid',
                 'bgcolor': bgcolor
             }
         elif output_type == 'ObjectRemoval':

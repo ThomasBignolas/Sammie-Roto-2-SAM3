@@ -1112,6 +1112,13 @@ class Sidebar(QWidget):
         matting_scroll.setFrameShape(QScrollArea.NoFrame)
         self.tab_widget.addTab(matting_scroll, "Matting")
         self.tab_widget.addTab(self.removal_tab, "Object Removal")
+        from sammie.aov.ui import AOVTab
+        self.aov_tab = AOVTab()
+        aov_scroll = QScrollArea()
+        aov_scroll.setWidgetResizable(True)
+        aov_scroll.setWidget(self.aov_tab)
+        aov_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.tab_widget.addTab(aov_scroll, 'AOVs')
         
         layout.addWidget(self.tab_widget)
 
@@ -1120,6 +1127,7 @@ class Sidebar(QWidget):
         self.segmentation_tab.load_values_from_settings()
         self.matting_tab.load_values_from_settings()
         self.removal_tab.load_values_from_settings()
+        self.aov_tab.load_values_from_settings()
 
 
 # ==================== MAIN WINDOW ====================
@@ -1159,6 +1167,10 @@ class MainWindow(QMainWindow):
         # Initialize UI
         self._init_ui()
         self._connect_signals()
+        self.sidebar.aov_tab.generate_requested.connect(self.run_aovs)
+        self.sidebar.aov_tab.export_requested.connect(self.export_aovs)
+        self.sidebar.aov_tab.preview_requested.connect(self.preview_aovs)
+        self.sidebar.aov_tab.changed.connect(self._update_current_frame_display)
         self._setup_hotkeys()
         self._update_point_editing_state()
         print(f"Sammie-Roto version {__version__}")
@@ -1665,7 +1677,7 @@ class MainWindow(QMainWindow):
         view_controls_layout.addWidget(QLabel("View:"))
         self.view_combo = QComboBox()
         self.view_combo.addItems([
-            "Segmentation-Edit", "Segmentation-Matte", "Segmentation-BGcolor", "Matting-Matte", "Matting-BGcolor", "ObjectRemoval"
+            "Segmentation-Edit", "Segmentation-Matte", "Segmentation-BGcolor", "Matting-Matte", "Matting-BGcolor", "ObjectRemoval", "AOV-Depth", "AOV-Normals", "None"
         ])
 
         # Always reset the view to "Segmentation-Edit"
@@ -1685,6 +1697,23 @@ class MainWindow(QMainWindow):
         """Handle bgcolor selection"""
         self.settings_mgr.set_session_setting("bgcolor", color_rgb)
         self._update_current_frame_display()
+
+    def _add_background_choice(self):
+        self.background_choice = QComboBox()
+        self.background_choice.addItem('Solid color', 'solid')
+        self.background_choice.addItem('Checkerboard', 'checkerboard')
+        self.background_choice.setMinimumWidth(125)
+        self.background_choice.setCurrentIndex(max(0, self.background_choice.findData(
+            self.settings_mgr.get_session_setting('background_style', 'solid'))))
+        self.color_picker.setEnabled(self.background_choice.currentData() == 'solid')
+        def changed():
+            value = self.background_choice.currentData()
+            self.settings_mgr.set_session_setting('background_style', value)
+            self.settings_mgr.save_session_settings()
+            self.color_picker.setEnabled(value == 'solid')
+            self._update_current_frame_display()
+        self.background_choice.currentIndexChanged.connect(changed)
+        self.dynamic_widgets_layout.addWidget(self.background_choice)
         
     def _update_dynamic_widgets(self):
         """Update dynamic widgets (checkboxes and color picker) based on current view mode"""
@@ -1746,6 +1775,9 @@ class MainWindow(QMainWindow):
             self.show_removal_mask_checkbox.setChecked(show_removal_mask)
             self.show_removal_mask_checkbox.stateChanged.connect(self.on_checkbox_changed)
             self.dynamic_widgets_layout.addWidget(self.show_removal_mask_checkbox)
+
+        if current_view in ('Segmentation-BGcolor', 'Matting-BGcolor'):
+            self._add_background_choice()
 
     def _clear_dynamic_widgets(self):
         """Remove all dynamic widgets from the container"""
@@ -1834,6 +1866,9 @@ class MainWindow(QMainWindow):
         elif current_tab == self.sidebar.removal_tab:
             # Switch to ObjectRemoval view
             target_view = "ObjectRemoval"
+        elif current_tab == self.sidebar.aov_tab:
+            self.preview_aovs(self.sidebar.aov_tab.preview.currentText())
+            return
         else:
             # Fallback to current selection if unknown tab
             return
@@ -2500,6 +2535,72 @@ class MainWindow(QMainWindow):
             if manage_models:
                 self.sam_manager.load_model_to_device()
             self._update_current_frame_display()
+
+    def preview_aovs(self, label):
+        target = {'Depth': 'AOV-Depth', 'Normals': 'AOV-Normals', 'Original plate': 'None'}[label]
+        self.view_combo.setCurrentText(target)
+        self._update_current_frame_display()
+
+    def run_aovs(self):
+        from sammie.aov.ui import AOVDialog
+        tab = self.sidebar.aov_tab
+        offloaded = False
+        try:
+            tab.settings().validate()
+            if core.VideoInfo.total_frames < 1:
+                raise ValueError('Import a video or image sequence first.')
+            source = str(self.settings_mgr.get_session_setting('video_file_path', '')).lower()
+            if source.endswith(('.exr', '.hdr')):
+                raise ValueError('AOV models need display-referred RGB. Import an sRGB/Rec.709 proxy of this linear EXR/HDR plate.')
+            if self.is_playing:
+                self.toggle_play_pause()
+            self.sam_manager.offload_model_to_cpu()
+            offloaded = True
+            self.matany_manager.unload_matting_model()
+            self.removal_manager.unload_minimax_model()
+            self.removal_manager.unload_propainterx_model()
+            dialog = AOVDialog(self, tab.make_job())
+            report, failure = dialog.execute()
+            if failure:
+                tab.status.setText(failure)
+                show_message_dialog(self, title='AOV generation', message=failure, type='warning')
+            elif report:
+                descriptions = []
+                for kind, entry in report['passes'].items():
+                    if entry.get('cached'):
+                        descriptions.append(f'{kind}: cache reused')
+                    else:
+                        text = f"{kind}: {entry['seconds']:.1f}s"
+                        if entry.get('gpu'):
+                            text += f", {entry['gpu']['peak_allocated_mib']:.0f} MiB peak allocated"
+                        descriptions.append(text)
+                tab.status.setText('; '.join(descriptions))
+                self.preview_aovs(tab.preview.currentText())
+        except Exception as error:
+            tab.status.setText(str(error))
+            show_message_dialog(self, title='AOV generation', message=str(error), type='warning')
+        finally:
+            if offloaded:
+                self.sam_manager.load_model_to_device()
+            self._update_current_frame_display()
+
+    def export_aovs(self):
+        from dataclasses import asdict
+        from sammie.aov.ui import AOVDialog
+        tab = self.sidebar.aov_tab
+        destination = QFileDialog.getExistingDirectory(self, 'Export float AOV EXR sequence')
+        if not destination:
+            return
+        job = tab.make_job()
+        job.update(operation='export', destination=destination, start_number=tab.start_number.value(),
+                   include_plate=tab.include_plate.isChecked(), include_mattes=tab.include_mattes.isChecked(),
+                   matte_source=tab.matte_source.currentData(), points=self.point_manager.points,
+                   session=asdict(self.settings_mgr.session_settings))
+        report, failure = AOVDialog(self, job).execute()
+        if failure:
+            show_message_dialog(self, title='AOV export', message=failure, type='warning')
+        elif report:
+            tab.status.setText(f"Exported {report['exported']} EXRs to {destination}")
 
     def run_object_removal(self):
         """Run object removal process"""

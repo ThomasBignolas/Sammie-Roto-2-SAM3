@@ -1,5 +1,6 @@
 # Sammie-Roto specific files and folders
 .research/
+checkpoints/aov/
 checkpoints/vitmatte/
 *.sammie
 .runtime/

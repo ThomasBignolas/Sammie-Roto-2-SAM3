@@ -86,6 +86,17 @@ def update_image(slider_value, view_options, points, return_numpy=False, object_
         return _handle_matting_alpha_view(slider_value, view_options, points, return_numpy, object_id_filter)
     elif view_mode == "ObjectRemoval":
         return _handle_object_removal_view(slider_value, view_options, points, return_numpy, object_id_filter)
+    elif view_mode in ('AOV-Depth', 'AOV-Normals'):
+        from sammie.aov.display import preview
+        options = get_settings_manager().get_session_setting('aov_settings', {})
+        image = preview(core.temp_dir, 'depth' if view_mode == 'AOV-Depth' else 'normals', slider_value, options)
+        if image is None:
+            image = core.load_base_frame(slider_value)
+            if image is not None:
+                image = image.copy()
+                cv2.putText(image, 'AOV unavailable - Generate this range/settings', (20, 45),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1., (255, 200, 80), 2, cv2.LINE_AA)
+        return image if return_numpy else _convert_to_qpixmap(image)
     elif view_mode == "None":
         return _handle_none_view(slider_value, return_numpy)
     else:
@@ -161,9 +172,15 @@ def _maybe_antialias_mask(mask_3channel, view_options):
     return mask_3channel
 
 
-def _composite_bgcolor(image, mask, bgcolor):
+def _composite_bgcolor(image, mask, bgcolor, background_style='solid'):
     """Blend `image` with a solid `bgcolor` background using `mask` (single-channel, 0-255) as alpha."""
-    bg = np.full_like(image, bgcolor)
+    if background_style == 'checkerboard':
+        h, w = image.shape[:2]
+        cell = max(8, round(min(h, w) / 40))
+        grid = ((np.arange(h)[:, None] // cell + np.arange(w)[None, :] // cell) % 2)
+        bg = np.repeat(np.where(grid[..., None], 160, 104).astype(np.uint8), 3, axis=2)
+    else:
+        bg = np.full_like(image, bgcolor)
     alpha = mask.astype(np.float32) / 255.0
     return cv2.blendLinear(image, bg, alpha, 1.0 - alpha)
 
@@ -238,7 +255,7 @@ def _handle_segmentation_bgcolor_view(frame_number, view_options, points, return
     mask_3channel = _maybe_antialias_mask(mask_3channel, view_options)
 
     bgcolor = view_options.get("bgcolor", (0, 255, 0))
-    image = _composite_bgcolor(image, mask_3channel[:, :, 0], bgcolor)
+    image = _composite_bgcolor(image, mask_3channel[:, :, 0], bgcolor, view_options.get('background_style', 'solid'))
 
     if return_numpy:
         return image
@@ -294,7 +311,7 @@ def _handle_matting_bgcolor_view(frame_number, view_options, points, return_nump
         return _convert_to_qpixmap(image) if not return_numpy else image
 
     bgcolor = view_options.get("bgcolor", (0, 255, 0))
-    image = _composite_bgcolor(image, mask, bgcolor)
+    image = _composite_bgcolor(image, mask, bgcolor, view_options.get('background_style', 'solid'))
 
     if return_numpy:
         return image
