@@ -65,6 +65,8 @@ class WorkerClient:
                 self.status(result['status'])
                 continue
             if 'error' in result:
+                if result.get('traceback'):
+                    print(result['traceback'])
                 raise RuntimeError(result['error'])
             return result
         self.close()

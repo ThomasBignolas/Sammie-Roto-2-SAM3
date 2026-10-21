@@ -148,7 +148,8 @@ class VideoExportWorker(BaseExportWorker):
         
         # Get frame rate
         fps = VideoInfo.fps
-        fps_rational = self._convert_fps_to_fraction(fps)
+        fps_rational = (Fraction(VideoInfo.fps_rational) if VideoInfo.fps_rational
+                        else self._convert_fps_to_fraction(fps))
         
         # Create video stream
         stream = container.add_stream(self.format.get_codec_name(), rate=fps_rational)
@@ -195,7 +196,7 @@ class VideoExportWorker(BaseExportWorker):
                 )
                 
                 if frame_array is None:
-                    continue
+                    raise RuntimeError(f"Missing source frame {frame_num}; export stopped to avoid a frame gap")
                 
                 # Handle alpha channel
                 if has_alpha and frame_array.shape[2] != 4:
@@ -342,7 +343,9 @@ class SequenceExportWorker(BaseExportWorker):
                         return_numpy=True, object_id_filter=obj_id
                     )
                     
-                    if mask_array is not None and mask_array.max() > 0:
+                    if mask_array is None:
+                        raise RuntimeError(f"Missing source frame {frame_num}; export stopped to avoid a frame gap")
+                    if mask_array is not None:
                         # Convert to grayscale if needed
                         if len(mask_array.shape) == 3 and mask_array.shape[2] > 1:
                             mask_array = mask_array[:, :, 0]
@@ -370,6 +373,8 @@ class SequenceExportWorker(BaseExportWorker):
                         frame_num, original_view_options, self.points,
                         return_numpy=True, object_id_filter=None
                     )
+                    if original_array is None:
+                        raise RuntimeError(f"Missing source frame {frame_num}; export stopped to avoid a frame gap")
                     
                     if original_array is not None:
                         if original_array.dtype == np.uint8:
@@ -409,6 +414,7 @@ class SequenceExportWorker(BaseExportWorker):
     def _export_png_sequence(self):
         """Export PNG frame sequence"""
         output_dir = self.settings.output_dir
+        os.makedirs(output_dir, exist_ok=True)
         object_id_filter = None if self.settings.object_id == -1 else self.settings.object_id
         has_alpha = 'Alpha' in self.settings.output_type
         
@@ -445,7 +451,11 @@ class SequenceExportWorker(BaseExportWorker):
                         bgra = cv2.cvtColor(frame_array, cv2.COLOR_RGBA2BGRA)
                     else:
                         bgra = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
-                    cv2.imwrite(frame_path, bgra, [cv2.IMWRITE_PNG_COMPRESSION, 4])
+                    if not cv2.imwrite(frame_path, bgra, [cv2.IMWRITE_PNG_COMPRESSION, 4]):
+                        raise OSError(f"Could not write exported frame: {frame_path}")
+                    exported_files.append(frame_path)
+                else:
+                    raise RuntimeError(f"Missing source frame {frame_num}; export stopped to avoid a frame gap")
                 
                 progress = int((i + 1) / self.export_frame_count * 100)
                 self.progress_updated.emit(progress)

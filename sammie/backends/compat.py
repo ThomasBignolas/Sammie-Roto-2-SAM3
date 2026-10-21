@@ -16,3 +16,21 @@ def configure_attention():
                             SDPBackend.MATH], **kwargs)
 
     decoder.sdpa_kernel = available_sdpa
+
+
+def configure_multiplex_output(model):
+    """Preserve tracker results on frames not previously visited by the detector.
+
+    Pinned upstream _build_sam2_output returns {} before merging refinements when
+    the frame is absent from cached_frame_outputs. A selected-object-only pass
+    legitimately reaches uncached frames. Seed an empty cache entry so the
+    official merge and subsequent suppression logic both execute normally.
+    """
+    original = model._build_sam2_output
+
+    def merge(state, frame, refined_obj_id_to_mask=None):
+        if refined_obj_id_to_mask is not None:
+            state['cached_frame_outputs'].setdefault(frame, {})
+        return original(state, frame, refined_obj_id_to_mask)
+
+    model._build_sam2_output = merge

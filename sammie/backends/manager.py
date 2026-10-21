@@ -76,3 +76,11 @@ class SamManager(core.CallbackMixin):
     def reset_session(self):
         if self.backend:
             self.backend.reset_session()
+
+    def offload_model_to_cpu(self):
+        if self.backend:
+            self.backend.offload_model_to_cpu()
+
+    def load_model_to_device(self):
+        if self.backend:
+            self.backend.load_model_to_device()

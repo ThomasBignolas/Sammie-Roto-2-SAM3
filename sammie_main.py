@@ -2967,7 +2967,12 @@ class MainWindow(QMainWindow):
                 except Exception as error:
                     print(error)
                     self.update_status_bar(str(error))
-            self.sam_manager.initialize_predictor()
+            try:
+                self.sam_manager.initialize_predictor()
+            except Exception as error:
+                self.sam_manager.unload_segmentation_model()
+                self.update_status_bar(str(error))
+                print(error)
             # Enable load model button
             self.sidebar.segmentation_tab.sam_model_btn.setEnabled(True)
             # Update frame slider range
@@ -2979,7 +2984,11 @@ class MainWindow(QMainWindow):
                     self.point_manager.points = points
                     self.point_manager._notify('load_all')
                     if self.sam_manager.predictor is not None:
-                        self.sam_manager.replay_points(points)
+                        try:
+                            self.sam_manager.replay_points(points)
+                        except Exception as error:
+                            self.update_status_bar(str(error))
+                            print(error)
                 
                 # Load UI state from session
                 self._load_session_ui_state()

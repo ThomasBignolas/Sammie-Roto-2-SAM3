@@ -42,6 +42,8 @@ class Sam3Engine:
                 checkpoint_path=checkpoint, use_fa3=False, compile=False,
                 warm_up=False, max_num_objects=16, async_loading_frames=True,
                 session_expiration_sec=0)
+            from .compat import configure_multiplex_output
+            configure_multiplex_output(self.predictor.model)
         elif version == 'SAM 3':
             self.predictor = build_sam3_video_predictor(
                 checkpoint_path=checkpoint, gpus_to_use=[0], compile=False,
@@ -105,6 +107,7 @@ class Sam3Engine:
         import torch
         request = dict(request)
         selected = request.pop('selected_object_ids', [])
+        synthetic_action = None
         if self.version == 'SAM 3.1' and selected:
             # 3.1 lacks SAM3's force_tracker_propagation flag. Its public history
             # method requests partial tracker propagation for all selected objects.
@@ -113,13 +116,22 @@ class Sam3Engine:
             self.predictor.model.add_action_history(
                 state, action_type='refine', obj_ids=selected,
                 frame_idx=request.get('start_frame_index'))
+            synthetic_action = state['action_history'][-1]
         with torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16):
             iterator = self.predictor.handle_stream_request(dict(request, session_id=self.session))
             try:
                 for response in iterator:
                     yield self.output(response, output_dir)
             finally:
-                iterator.close()
+                try:
+                    iterator.close()
+                finally:
+                    if synthetic_action is not None:
+                        # This requests a propagation pass; it is not a user point
+                        # refinement. Leaving it in history skips the official first-
+                        # correction object extraction and mixes multiplex tensor sizes.
+                        state['action_history'][:] = [a for a in state['action_history']
+                                                     if a is not synthetic_action]
 
     def stats(self):
         import torch
@@ -167,7 +179,7 @@ def main():
             emit({'result': result})
         except Exception as error:
             traceback.print_exc(file=sys.stderr)
-            emit({'error': f'{type(error).__name__}: {error}'})
+            emit({'error': f'{type(error).__name__}: {error}', 'traceback': traceback.format_exc()})
             gc.collect()
 
 
