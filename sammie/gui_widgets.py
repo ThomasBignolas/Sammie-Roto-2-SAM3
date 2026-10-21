@@ -307,7 +307,7 @@ class PointTable(QTableWidget):
 
         return widget
     
-    def add_point(self, frame, object_id, positive, x, y):
+    def add_point(self, frame, object_id, positive, x, y, kind=None):
         """Add a new point to the table"""
         # Check if show_all_points is enabled and if frame matches current_frame
         settings_mgr = get_settings_manager()
@@ -334,7 +334,10 @@ class PointTable(QTableWidget):
 
         # Set icon for positive/negative column
         type_item = QTableWidgetItem()
-        if positive:
+        if kind == 'sam3_seed':
+            type_item.setText('Select')
+            type_item.setToolTip('Text/box instance selection. This anchor is not sent as a point prompt.')
+        elif positive:
             type_item.setIcon(QIcon(":/icons/plus.png"))
         else:
             type_item.setIcon(QIcon(":/icons/minus.png"))

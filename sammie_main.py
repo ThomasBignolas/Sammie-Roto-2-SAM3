@@ -24,6 +24,7 @@ from sammie.resources import resources
 from sammie import core
 from sammie import matting
 from sammie import removal
+from sammie.sam3_controls import Sam3Controls, select_candidates, segmentation_action
 from sammie.export_image_dialog import ImageExportDialog
 from sammie.export_dialog import ExportDialog
 from sammie.settings_dialog import SettingsDialog
@@ -141,7 +142,7 @@ class SegmentationTab(QWidget):
         self._update_name_display(0)
         
         # Instructions for mouse clicks
-        instructions_label = QLabel("Left-click: Add positive point\nCtrl+Left-click: Add negative point\nRight-click: Add negative point\nHold Shift: Live Preview")
+        instructions_label = QLabel("Left-click: Add positive point\nCtrl+Left-click: Add negative point\nRight-click: Add negative point\nHold Shift: Live Preview (SAM 2)")
         instructions_label.setStyleSheet("""
             QLabel {
                 background-color: palette(alternate-base);
@@ -167,7 +168,7 @@ class SegmentationTab(QWidget):
         settings_mgr.get_session_setting("default_sam_model", "Base")
 
         self.sam_model_combo = QComboBox()
-        self.sam_model_combo.addItems(["Base", "Large", "Efficient", "Anime"])
+        self.sam_model_combo.addItems(["Base", "Large", "Efficient", "Anime", "SAM 3", "SAM 3.1"])
         self.sam_model_combo.setToolTip("Large model is slower but slightly more accurate.\nEfficient model is faster but less accurate.")
         self.sam_model_btn = QPushButton("Load Model")
         self.sam_model_btn.setEnabled(False) # disabled until video is loaded
@@ -176,6 +177,8 @@ class SegmentationTab(QWidget):
         model_layout_row.addWidget(self.sam_model_btn)
         
         layout.addWidget(model_group)
+        self.sam3_controls = Sam3Controls(self.sam_model_combo)
+        layout.addWidget(self.sam3_controls)
 
     def _create_clear_points_group(self, layout):
         """Create the Clear Points group with all clearing actions"""
@@ -398,6 +401,9 @@ class SegmentationTab(QWidget):
             self.sam_model_combo.setCurrentIndex(2)
         elif model == "Anime":
             self.sam_model_combo.setCurrentIndex(3)
+        else:
+            self.sam_model_combo.setCurrentText(model)
+        self.sam3_controls.restore()
 
         # Update sliders
         slider_mappings = [
@@ -1148,7 +1154,7 @@ class MainWindow(QMainWindow):
         self._setup_hotkeys()
         self._update_point_editing_state()
         print(f"Sammie-Roto version {__version__}")
-        self.update_checker.check_for_updates(current_version=__version__)
+        # Fork upgrades are installed through git; upstream's updater would replace this integration.
 
         # Show the window immediately so it appears before model loading
         self.show()
@@ -1164,7 +1170,11 @@ class MainWindow(QMainWindow):
         progress.show()
         QApplication.processEvents()
         core.DeviceManager.setup_device()
-        self.sam_manager.load_segmentation_model(parent_window=self)
+        try:
+            self.sam_manager.load_segmentation_model(parent_window=self)
+        except Exception as error:
+            self.update_status_bar(str(error))
+            print(error)
         QApplication.processEvents()
         # Load file or resume session
         if self.initial_file:
@@ -1248,6 +1258,7 @@ class MainWindow(QMainWindow):
             seg_tab.parent_window = self
             # Connect segmentation tab buttons
             seg_tab.sam_model_btn.clicked.connect(self.load_segmentation_model)
+            seg_tab.sam3_controls.find.clicked.connect(self.find_sam3_objects)
             seg_tab.undo_last_point_btn.clicked.connect(self.undo_last_point)
             seg_tab.clear_frame_btn.clicked.connect(self.clear_frame_points)
             seg_tab.clear_object_btn.clicked.connect(self.clear_object_points)
@@ -1855,7 +1866,7 @@ class MainWindow(QMainWindow):
             point = kwargs['point']
             # Ensure current_frame is up to date before adding point
             self.point_table.set_current_frame(self.frame_slider.value())
-            self.point_table.add_point(point['frame'], point['object_id'], point['positive'], point['x'], point['y'])
+            self.point_table.add_point(point['frame'], point['object_id'], point['positive'], point['x'], point['y'], point.get('kind'))
             # Mark tracking as stale (remove checkmarks) but don't clear data
             self.sam_manager.propagated = False
             self.sam_manager.deduplicated = False
@@ -1902,10 +1913,10 @@ class MainWindow(QMainWindow):
             object_id = kwargs.get('object_id')
             if object_id is not None:
                 # Call predictor remove_object
-                self.sam_manager.predictor.remove_object(self.sam_manager.inference_state, object_id)
+                self.sam_manager.remove_object(object_id)
             if len(self.point_manager.points) == 0:
                 # Reset predictor when no points remain
-                self.sam_manager.predictor.reset_state(self.sam_manager.inference_state)
+                self.sam_manager.reset_session()
                 self.sam_manager.propagated = False
                 self.matany_manager.propagated = False
                 self.removal_manager.propagated = False
@@ -1956,6 +1967,9 @@ class MainWindow(QMainWindow):
             
     def _on_segmentation_changed(self, action, **kwargs):
         """Handle segmentation events and update display"""
+        if action == 'status':
+            self.update_status_bar(kwargs['text'])
+            self.segmentation_tab.sam3_controls.status.setText(kwargs['text'])
         if action == 'segmentation_complete':
             frame = kwargs.get('frame')
             current_frame = self.frame_slider.value()
@@ -1992,9 +2006,9 @@ class MainWindow(QMainWindow):
         for point in self.point_manager.points:
             # If show_all_points is disabled, only add points for current frame
             if not show_all_points and point['frame'] == current_frame:
-                self.point_table.add_point(point['frame'], point['object_id'], point['positive'], point['x'], point['y'])
+                self.point_table.add_point(point['frame'], point['object_id'], point['positive'], point['x'], point['y'], point.get('kind'))
             elif show_all_points:
-                self.point_table.add_point(point['frame'], point['object_id'], point['positive'], point['x'], point['y'])
+                self.point_table.add_point(point['frame'], point['object_id'], point['positive'], point['x'], point['y'], point.get('kind'))
 
     def closeEvent(self, event):
         """Clean up on close"""
@@ -2004,6 +2018,7 @@ class MainWindow(QMainWindow):
         self.settings_mgr.save_session_settings()
         
         self._save_window_and_splitter_settings()
+        self.sam_manager.unload_segmentation_model()
 
         # Clean up console redirect
         if hasattr(self, 'console_redirect'):
@@ -2012,10 +2027,17 @@ class MainWindow(QMainWindow):
 
     # ==================== POINT OPERATIONS ====================
     
+    @segmentation_action
     def add_point_from_click(self, x, y, is_positive):
         """Add point when user clicks image"""
         current_frame = self.frame_slider.value()
         seg_tab = self.sidebar.segmentation_tab
+        controls = seg_tab.sam3_controls
+        if controls.isVisible() and controls.box.isChecked():
+            box = controls.take_box_click(x, y)
+            if box is not False:
+                self.find_sam3_objects(box=box)
+            return
         
         object_id = seg_tab.get_selected_object_id()
         
@@ -2041,9 +2063,18 @@ class MainWindow(QMainWindow):
         coordinates, labels = self.point_manager.get_sam2_points(frame, object_id)
         
         # Run segmentation (this will trigger segmentation callback and update image)
-        self.sam_manager.segment_image(frame, object_id, coordinates, labels)  
+        try:
+            self.sam_manager.segment_image(frame, object_id, coordinates, labels)
+        except Exception:
+            self.point_manager.points.pop()
+            self.settings_mgr.save_points(self.point_manager.points)
+            self._refresh_table()
+            raise
     
     def on_preview_requested(self, x, y, is_positive):
+        if (not self.sam_manager.supports_preview or
+                self.segmentation_tab.sam_model_combo.currentText() != self.sam_manager.loaded_model_name):
+            return
         frame = self.frame_slider.value()
         object_id = self.sidebar.segmentation_tab.get_selected_object_id()
         preview_mask = self.sam_manager.preview_point(frame, object_id, self.point_manager.get_all_points(), x, y, is_positive)
@@ -2076,7 +2107,7 @@ class MainWindow(QMainWindow):
         """Remove last point"""
         removed_point = self.point_manager.remove_last()
         if removed_point:
-            frame, object_id, point_type, x, y = removed_point.values()
+            frame, object_id, point_type, x, y = (removed_point[key] for key in ('frame', 'object_id', 'positive', 'x', 'y'))
             print(f"Deleted point: Frame {frame}, Object {object_id}, "
               f"Type: {point_type}, Position: ({x}, {y})")
         else:
@@ -2159,10 +2190,11 @@ class MainWindow(QMainWindow):
 
     # ==================== PROCESSING OPERATIONS ====================
     
+    @segmentation_action
     def load_segmentation_model(self):
         """Load a new SAM model"""
         model = self.segmentation_tab.sam_model_combo.currentText()
-        if model == self.sam_manager.loaded_model_name:
+        if model == self.sam_manager.loaded_model_name and not self.sam_manager.supports_text:
             print("Model is already loaded")
             return
 
@@ -2172,18 +2204,48 @@ class MainWindow(QMainWindow):
         progress.show()
         QApplication.processEvents()
 
-        self.sam_manager.unload_segmentation_model()
+        try:
+            if model not in ('SAM 3', 'SAM 3.1') and any(p.get('kind') == 'sam3_seed' for p in self.point_manager.points):
+                raise ValueError('Clear SAM 3 text/box selections before switching to SAM 2. Save the project first if needed.')
+            if self.sam_manager.load_segmentation_model(model, parent_window=self):
+                self.sam_manager.initialize_predictor()
+                self.sam_manager.replay_points(self.point_manager.get_all_points())
+                settings_mgr = get_settings_manager()
+                settings_mgr.set_session_setting("sam_model", model)
+                settings_mgr.set_app_setting("default_sam_model", model)
+                self.update_status_bar(f'{model} ready')
+        finally:
+            progress.close()
+
+    @segmentation_action
+    def find_sam3_objects(self, checked=False, box=None):
+        if not self.sam_manager.supports_text:
+            raise RuntimeError('Load SAM 3 or SAM 3.1 before finding objects.')
+        if not core.VideoInfo.total_frames:
+            raise RuntimeError('Load an image or video first.')
+        controls = self.segmentation_tab.sam3_controls
+        frame = self.frame_slider.value()
+        progress = QProgressDialog('Finding objects...', None, 0, 0, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.show()
         QApplication.processEvents()
-        if self.sam_manager.load_segmentation_model(model, parent_window=self):
-            self.sam_manager.initialize_predictor()
-            settings_mgr = get_settings_manager()
-            settings_mgr.set_session_setting("sam_model", model)
-            settings_mgr.set_app_setting("default_sam_model", model)
-        else:
-            print("Failed to load segmentation model")
+        try:
+            masks = self.sam_manager.discover(frame, text=controls.text.text(), box=box)
+        finally:
+            progress.close()
+        if not masks:
+            controls.status.setText('No matching objects found. Try a different description or box.')
+            return
+        selected = select_candidates(self, masks, frame)
+        records = self.sam_manager.accept_candidates(selected)
+        for record in records:
+            self.point_manager.points.append(record)
+            self.point_manager._notify('add', point=record)
+        self.settings_mgr.save_points(self.point_manager.points)
+        self._update_current_frame_display()
+        controls.status.setText(f'{len(records)} objects selected. Add point corrections, then track.')
 
-        progress.close()
-
+    @segmentation_action
     def track_objects(self):
         """Run object tracking using current points"""
         self.settings_mgr.save_session_settings()
@@ -2205,6 +2267,7 @@ class MainWindow(QMainWindow):
             print("Points must be added before tracking")
             self._update_current_frame_display()
     
+    @segmentation_action
     def track_forward(self):
         """Track objects forward from the current frame to the out point (or end of video)"""
         self.settings_mgr.save_session_settings()
@@ -2224,6 +2287,7 @@ class MainWindow(QMainWindow):
             print("Points must be added before tracking")
             self._update_current_frame_display()
 
+    @segmentation_action
     def track_backward(self):
         """Track objects backward from the current frame to the in point (or start of video)"""
         self.settings_mgr.save_session_settings()
@@ -2243,6 +2307,7 @@ class MainWindow(QMainWindow):
             print("Points must be added before tracking")
             self._update_current_frame_display()
 
+    @segmentation_action
     def track_one_frame_forward(self):
         """Track objects one frame forward from the current frame"""
         count = len(self.point_manager.points)
@@ -2261,6 +2326,7 @@ class MainWindow(QMainWindow):
             print("Points must be added before tracking")
             self._update_current_frame_display()
 
+    @segmentation_action
     def track_one_frame_backward(self):
         """Track objects one frame backward from the current frame"""
         count = len(self.point_manager.points)
@@ -2894,6 +2960,13 @@ class MainWindow(QMainWindow):
         if framecount is not None and framecount > 0:
             print(f"Loaded {framecount} frames")
             # initialize the predictor
+            selected_model = self.settings_mgr.get_session_setting('sam_model', 'Base')
+            if selected_model != self.sam_manager.loaded_model_name:
+                try:
+                    self.sam_manager.load_segmentation_model(selected_model, parent_window=self)
+                except Exception as error:
+                    print(error)
+                    self.update_status_bar(str(error))
             self.sam_manager.initialize_predictor()
             # Enable load model button
             self.sidebar.segmentation_tab.sam_model_btn.setEnabled(True)
@@ -2905,6 +2978,8 @@ class MainWindow(QMainWindow):
                 if points:
                     self.point_manager.points = points
                     self.point_manager._notify('load_all')
+                    if self.sam_manager.predictor is not None:
+                        self.sam_manager.replay_points(points)
                 
                 # Load UI state from session
                 self._load_session_ui_state()

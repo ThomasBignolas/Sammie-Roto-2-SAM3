@@ -87,6 +87,7 @@ class SessionSettings:
     video_width: int = 0
     video_height: int = 0
     video_fps: float = 0.0
+    video_fps_rational: str = ''
     total_frames: int = 0
     color_space: int = 1    # 1=BT.709, 5=BT.601 etc.
     in_point: int = None
@@ -107,6 +108,7 @@ class SessionSettings:
     
     # Segmentation parameters
     sam_model: str = "Base"
+    sam3_working_edge: int = 1920
     holes: int = 0
     dots: int = 0
     border_fix: int = 0

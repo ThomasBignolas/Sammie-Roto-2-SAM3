@@ -29,6 +29,7 @@ class VideoInfo:
     width = 0
     height = 0
     fps = 0
+    fps_rational = ''
     total_frames = 0
     color_space = 1
 
@@ -43,6 +44,7 @@ class DeviceManager:
             return cls._device  # already set
 
         os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+        os.environ.setdefault('TORCH_HOME', str(Path(__file__).resolve().parents[1] / '.runtime_cache' / 'torch'))
         print("PyTorch version:", torch.__version__)
 
         is_rocm = "rocm" in torch.__version__.lower()
@@ -281,7 +283,7 @@ class PointManager(CallbackMixin):
 
     def get_sam2_points(self, frame, object_id=None):
         """Get points in SAM2 format: (coordinates, labels)"""
-        frame_points = [p for p in self.points if p['frame'] == frame]
+        frame_points = [p for p in self.points if p['frame'] == frame and p.get('kind') != 'sam3_seed']
         if object_id is not None:
             frame_points = [p for p in frame_points if p['object_id'] == object_id]
 

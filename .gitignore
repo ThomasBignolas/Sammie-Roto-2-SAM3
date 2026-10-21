@@ -1,4 +1,9 @@
 # Sammie-Roto specific files and folders
+.research/
+.runtime/
+.test-output/
+checkpoints/sam3*.pt
+checkpoints/1x_binary_mask_smooth.pth
 .uv/
 python-3.12.8-embed-amd64/
 temp/
