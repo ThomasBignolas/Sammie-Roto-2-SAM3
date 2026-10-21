@@ -13,6 +13,7 @@ from sammie.settings_manager import get_settings_manager
 from .bridge import ROOT, WorkerClient
 from .masks import binary_mask, normalize_points, normalize_box, pack_mask, match_seeds
 from .tracking import TrackingMixin
+from .concepts import split_concepts, split_id, MAX_OBJECTS
 
 
 class Sam3Backend(TrackingMixin, core.CallbackMixin):
@@ -31,6 +32,8 @@ class Sam3Backend(TrackingMixin, core.CallbackMixin):
         self.gpu = {}
         self.resource = None
         self.candidates = None
+        self.candidate_labels = {}
+        self.discovery_misses = []
         self.options = None
         self.transport = Path(core.temp_dir).resolve() / 'sam3_transport'
 
@@ -148,30 +151,51 @@ class Sam3Backend(TrackingMixin, core.CallbackMixin):
 
     def discover(self, frame, text=None, box=None):
         self._ensure()
-        if self.journal:
-            raise RuntimeError('Text/box discovery starts a selection. Clear All first, then discover objects; '
-                               'you can add independent objects and corrections with points afterwards.')
-        query = {'type': 'add_prompt', 'frame_index': frame}
-        if text and text.strip():
-            query['text'] = text.strip()
+        phrases = split_concepts(text)
+        queries = [{'type': 'add_prompt', 'frame_index': frame, 'text': phrase} for phrase in phrases]
+        if not queries and box is not None:
+            queries = [{'type': 'add_prompt', 'frame_index': frame}]
         if box is not None:
-            query['bounding_boxes'] = [normalize_box(box, core.VideoInfo.width, core.VideoInfo.height)]
-            query['bounding_box_labels'] = [1]
-        if 'text' not in query and 'bounding_boxes' not in query:
+            for query in queries:
+                query['bounding_boxes'] = [normalize_box(box, core.VideoInfo.width, core.VideoInfo.height)]
+                query['bounding_box_labels'] = [1]
+        if not queries:
             raise ValueError('Enter an object description or choose a box')
-        self.reset_session()
-        result = self._request(query)
-        self.candidates = (query, self._read_masks(result))
-        return self.candidates[1]
+        occupied = {split_id(oid)[0] for oid in self.id_map}
+        free = [group for group in range(MAX_OBJECTS) if group not in occupied]
+        if len(queries) > len(free) or len(self.id_map) >= MAX_OBJECTS:
+            raise ValueError('Up to 16 selected objects/concept sessions are supported. Remove an object before adding more.')
+        self.candidates, self.candidate_labels, self.discovery_misses = {}, {}, []
+        # Temporary discovery states are released after each search. Committed
+        # trackers and their temporal history remain untouched, including Cancel.
+        for index, (query, group) in enumerate(zip(queries, free)):
+            query['group_id'] = group
+            label = query.get('text', 'Box selection')
+            self._status(f'Searching {index+1}/{len(queries)}: {label}')
+            result = self._request(query)
+            masks = self._read_masks(result)
+            self._request({'type': 'close_group', 'group_id': group})
+            masks = {oid: mask for oid, mask in masks.items() if np.any(mask)}
+            if not masks:
+                self.discovery_misses.append(label)
+            for number, (oid, mask) in enumerate(masks.items(), 1):
+                self.candidates[oid] = (query, mask)
+                self.candidate_labels[oid] = f'{label} — instance {number}'
+        return {oid: value[1] for oid, value in self.candidates.items()}
 
     def accept_candidates(self, selected):
-        query, masks = self.candidates
-        if len(selected) > 16:
+        selected = list(dict.fromkeys(map(int, selected)))
+        if not self.candidates or not selected:
+            self.candidates = None
+            return []
+        if any(oid not in self.candidates for oid in selected):
+            raise ValueError('Selection is stale; search again.')
+        if len(selected) + len(self.id_map) > MAX_OBJECTS:
             raise ValueError('Select at most 16 objects for this memory profile')
         records = []
-        self.id_map = {int(oid): i for i, oid in enumerate(selected)}
-        for oid, app_id in self.id_map.items():
-            mask = masks[oid]
+        next_id = max(self.id_map.values(), default=-1) + 1
+        for app_id, oid in enumerate(selected, next_id):
+            query, mask = self.candidates[oid]
             ys, xs = np.nonzero(mask)
             if not len(xs):
                 continue
@@ -180,14 +204,37 @@ class Sam3Backend(TrackingMixin, core.CallbackMixin):
                             'x': int(xs.mean() * core.VideoInfo.width / mask.shape[1]),
                             'y': int(ys.mean() * core.VideoInfo.height / mask.shape[0]),
                             'query': query, 'seed_mask': pack_mask(mask)})
-        for oid in masks:
-            if oid not in self.id_map:
-                self._request({'type': 'remove_object', 'obj_id': oid, 'is_user_action': False,
-                               'frame_index': query['frame_index']})
-        self.journal = copy.deepcopy(records)
-        self.write_masks(query['frame_index'], self._source_masks(masks))
+        old_map = dict(self.id_map)
+        try:
+            self._restore_seeds(records)
+        except Exception:
+            self.id_map = old_map
+            self.unload_segmentation_model()
+            raise
+        self.journal.extend(copy.deepcopy(records))
         self.candidates = None
+        self.propagated = self.deduplicated = False
         return records
+
+    def _restore_seeds(self, seeds):
+        groups = {}
+        for seed in seeds:
+            key = json.dumps(seed['query'], sort_keys=True)
+            groups.setdefault(key, []).append(seed)
+        pending = []
+        for records in groups.values():
+            query = records[0]['query']
+            masks = self._read_masks(self._request(query))
+            mapping = match_seeds(records, masks)
+            for oid in masks:
+                if oid not in mapping:
+                    self._request({'type': 'remove_object', 'obj_id': oid, 'is_user_action': False,
+                                   'frame_index': query['frame_index']})
+            self.id_map.update(mapping)
+            pending.append((query['frame_index'], {mapping[oid]: binary_mask(masks[oid],
+                core.VideoInfo.width, core.VideoInfo.height) for oid in mapping}))
+        for frame, masks in pending:
+            self.write_masks(frame, masks)
 
     def segment_image(self, frame_number, object_id, input_points, input_labels):
         self._ensure()
@@ -221,6 +268,7 @@ class Sam3Backend(TrackingMixin, core.CallbackMixin):
             self._request({'type': 'reset_session'})
         self.id_map = {}
         self.journal = []
+        self.candidates = None
 
     def replay_points(self, points_list):
         self._ensure()
@@ -230,16 +278,12 @@ class Sam3Backend(TrackingMixin, core.CallbackMixin):
         self.journal = []
         seeds = [p for p in points_list if p.get('kind') == 'sam3_seed']
         if seeds:
-            if any(s['query'] != seeds[0]['query'] for s in seeds):
-                raise ValueError('A SAM3 selection must have one initial text/box query')
-            result = self._request(seeds[0]['query'])
-            masks = self._read_masks(result)
-            self.id_map = match_seeds(seeds, masks)
-            for oid in masks:
-                if oid not in self.id_map:
-                    self._request({'type': 'remove_object', 'obj_id': oid, 'is_user_action': False,
-                                   'frame_index': seeds[0]['frame']})
-            self.write_masks(seeds[0]['frame'], self._source_masks(masks))
+            try:
+                self._restore_seeds(seeds)
+            except Exception:
+                self.journal = copy.deepcopy(points_list)
+                self.unload_segmentation_model()
+                raise
             self.journal = copy.deepcopy(seeds)
         groups = {}
         for point in points_list:

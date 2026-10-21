@@ -34,7 +34,7 @@ def main():
     with patch.object(sammie_main, 'initialize_settings', return_value=settings), \
             patch.object(sammie_main.MainWindow, '_deferred_init'), \
             patch.object(sammie_main.MainWindow, '_setup_console_redirect'), \
-            patch.object(sammie_main, 'select_candidates', side_effect=lambda _, masks, frame: list(masks)[:2]), \
+            patch.object(sammie_main, 'select_candidates', side_effect=lambda _, masks, frame, *a, **k: list(masks)[:2]), \
             patch.object(sammie_main.QMessageBox, 'question', return_value=sammie_main.QMessageBox.Yes), \
             patch.object(sammie_main.QMessageBox, 'warning', side_effect=AssertionError('Unexpected UI error dialog')):
         window = sammie_main.MainWindow()

@@ -38,7 +38,8 @@ class WorkerClient:
                 except ValueError:
                     self.messages.put({'error': 'Invalid response from SAM 3 worker'})
         finally:
-            self.messages.put({'error': 'SAM 3 worker exited. ' + '\n'.join(self.stderr_tail[-8:])})
+            self.messages.put({'error': f'SAM 3 worker exited (code {self.process.poll()}). ' +
+                               '\n'.join(line[-2000:] for line in self.stderr_tail[-8:])})
 
     def _read_errors(self):
         for line in self.process.stderr:

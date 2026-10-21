@@ -9,6 +9,7 @@ import sys
 import time
 import traceback
 import uuid
+from .concepts import scoped_id, split_id, MAX_OBJECTS
 
 
 def configure_runtime():
@@ -23,6 +24,8 @@ class Sam3Engine:
         self.predictor = None
         self.session = None
         self.version = None
+        self.sessions = {}
+        self.resource = None
 
     def load(self, version, checkpoint):
         import torch
@@ -55,32 +58,62 @@ class Sam3Engine:
         return self.stats()
 
     def start(self, resource):
+        for group in list(self.sessions):
+            self._close_group(group)
+        self.resource = resource
+        return self._start_group(0)
+
+    def _close_group(self, group):
+        session = self.sessions.pop(group, None)
+        if session:
+            self.predictor.handle_request({'type': 'close_session', 'session_id': session})
+        if group == 0:
+            self.session = None
+
+    def _start_group(self, group):
         import torch
         from .frame_cache import install_bounded_loader
         install_bounded_loader()
-        if self.session:
-            self.predictor.handle_request({'type': 'close_session', 'session_id': self.session})
+        if self.resource is None or not 0 <= group < MAX_OBJECTS:
+            raise ValueError('Start a video before creating a valid concept session.')
         # Pinned upstream's base wrapper passes offload_state_to_cpu to the 3.1 model,
         # whose init_state does not accept it. Use the actual model signature explicitly.
-        options = {'resource_path': resource, 'offload_video_to_cpu': True,
+        options = {'resource_path': self.resource, 'offload_video_to_cpu': True,
                    'offload_state_to_cpu': True, 'async_loading_frames': True}
         params = inspect.signature(self.predictor.model.init_state).parameters
         with torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16):
             state = self.predictor.model.init_state(**{k: v for k, v in options.items() if k in params})
-        self.session = str(uuid.uuid4())
+        session = str(uuid.uuid4())
         now = time.time()
-        self.predictor._all_inference_states[self.session] = {
-            'state': state, 'session_id': self.session, 'start_time': now, 'last_use_time': now}
+        self.predictor._all_inference_states[session] = {
+            'state': state, 'session_id': session, 'start_time': now, 'last_use_time': now}
+        self.sessions[group] = session
+        if group == 0:
+            self.session = session
         return {'frames': state['num_frames'], 'width': state['orig_width'],
                 'height': state['orig_height'], 'state_offload': 'offload_state_to_cpu' in params}
 
     def request(self, request):
         import torch
-        if not self.session:
+        if self.resource is None:
             raise RuntimeError('Start a video session first')
-        request = dict(request, session_id=self.session)
+        request = dict(request)
+        group = int(request.pop('group_id', 0))
+        if request['type'] == 'reset_session':
+            for existing in list(self.sessions):
+                self._close_group(existing)
+            return {'is_success': True}
+        if request['type'] == 'close_group':
+            self._close_group(group)
+            return {'is_success': True}
+        if 'obj_id' in request:
+            group, request['obj_id'] = split_id(request['obj_id'])
+        if group not in self.sessions:
+            self._start_group(group)
+        request['session_id'] = self.sessions[group]
         with torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16):
-            return self.predictor.handle_request(request)
+            result = self.predictor.handle_request(request)
+        return dict(result, group_id=group)
 
     def output(self, response, output_dir):
         import cv2
@@ -97,14 +130,46 @@ class Sam3Engine:
                 mask = mask.detach().cpu().numpy()
             mask = np.asarray(mask)
             mask = binary_mask(mask, mask.shape[-1], mask.shape[-2])
-            path = target / f'{int(oid)}.png'
+            public_id = scoped_id(response.get('group_id', 0), oid)
+            path = target / f'{public_id}.png'
             if not cv2.imwrite(str(path), mask):
                 raise OSError(f'Could not write {path}')
-            paths[str(int(oid))] = str(path)
+            paths[str(public_id)] = str(path)
         return {'frame': int(response['frame_index']), 'masks': paths, 'gpu': self.stats()}
 
     def propagate(self, request, output_dir):
+        # One checkpoint, independent native concept sessions. Advance each session
+        # once per frame, then emit one aligned set of public object IDs. No union
+        # prompts, point approximations, or cross-concept ID suppression are used.
+        groups = {}
+        for object_id in request.get('selected_object_ids', []):
+            group, native = split_id(object_id)
+            groups.setdefault(group, []).append(native)
+        if not groups:
+            groups = {0: []}
+        streams = []
+        try:
+            for group, ids in groups.items():
+                if group not in self.sessions:
+                    raise RuntimeError('Concept session is missing; replay the saved selection.')
+                streams.append(self._propagate_group(dict(request, selected_object_ids=ids), output_dir, group))
+            while True:
+                results = [next(stream, None) for stream in streams]
+                if all(result is None for result in results):
+                    return
+                if any(result is None for result in results) or len({r['frame'] for r in results}) != 1:
+                    raise RuntimeError('Concept trackers returned different frame sequences.')
+                masks = {}
+                for result in results:
+                    masks.update(result['masks'])
+                yield {'frame': results[0]['frame'], 'masks': masks, 'gpu': self.stats()}
+        finally:
+            for stream in reversed(streams):
+                stream.close()
+
+    def _propagate_group(self, request, output_dir, group):
         import torch
+        session = self.sessions[group]
         request = dict(request)
         selected = request.pop('selected_object_ids', [])
         synthetic_action = None
@@ -112,16 +177,16 @@ class Sam3Engine:
             # 3.1 lacks SAM3's force_tracker_propagation flag. Its public history
             # method requests partial tracker propagation for all selected objects.
             # This prevents a second directional pass being treated as a cache fetch.
-            state = self.predictor._all_inference_states[self.session]['state']
+            state = self.predictor._all_inference_states[session]['state']
             self.predictor.model.add_action_history(
                 state, action_type='refine', obj_ids=selected,
                 frame_idx=request.get('start_frame_index'))
             synthetic_action = state['action_history'][-1]
         with torch.inference_mode(), torch.autocast('cuda', dtype=torch.bfloat16):
-            iterator = self.predictor.handle_stream_request(dict(request, session_id=self.session))
+            iterator = self.predictor.handle_stream_request(dict(request, session_id=session))
             try:
                 for response in iterator:
-                    yield self.output(response, output_dir)
+                    yield self.output(dict(response, group_id=group), output_dir)
             finally:
                 try:
                     iterator.close()

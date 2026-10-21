@@ -1,0 +1,128 @@
+{
+  "sam3_video": {
+    "model": "SAM 3",
+    "frames": 4,
+    "source_dimensions": [
+      4608,
+      3164
+    ],
+    "passed": true,
+    "detections": {
+      "0": "person \u2014 instance 1",
+      "1000000": "camera \u2014 instance 1"
+    },
+    "individual_vs_combined_seed_iou": [
+      1.0,
+      1.0
+    ],
+    "tracking_seconds": 1.8291292000212707,
+    "areas_by_frame": [
+      {
+        "0": 4654087,
+        "1": 460973
+      },
+      {
+        "0": 4668942,
+        "1": 467028
+      },
+      {
+        "0": 4662344,
+        "1": 466795
+      },
+      {
+        "0": 4647740,
+        "1": 474382
+      }
+    ],
+    "gpu": {
+      "allocated_mib": 5425,
+      "reserved_mib": 6156,
+      "peak_mib": 5904,
+      "free_mib": 8974,
+      "total_mib": 16310
+    },
+    "comma_detections": 2
+  },
+  "sam31_video": {
+    "model": "SAM 3.1",
+    "frames": 4,
+    "source_dimensions": [
+      4608,
+      3164
+    ],
+    "passed": true,
+    "detections": {
+      "0": "person \u2014 instance 1",
+      "1000000": "camera \u2014 instance 1"
+    },
+    "individual_vs_combined_seed_iou": [
+      1.0,
+      1.0
+    ],
+    "tracking_seconds": 2.014720999985002,
+    "areas_by_frame": [
+      {
+        "0": 4659252,
+        "1": 462239
+      },
+      {
+        "0": 4655739,
+        "1": 472062
+      },
+      {
+        "0": 4644785,
+        "1": 474301
+      },
+      {
+        "0": 4639946,
+        "1": 480133
+      }
+    ],
+    "gpu_before_offload": {
+      "allocated_mib": 6163,
+      "reserved_mib": 7640,
+      "peak_mib": 7343,
+      "free_mib": 0,
+      "total_mib": 16310
+    },
+    "gpu": {
+      "allocated_mib": 6106,
+      "reserved_mib": 7220,
+      "peak_mib": 6634,
+      "free_mib": 7910,
+      "total_mib": 16310
+    },
+    "comma_detections": 2
+  },
+  "sam3_mainwindow": {
+    "model": "SAM 3",
+    "passed": true,
+    "labels": [
+      [
+        "person \u2014 instance 1",
+        "camera \u2014 instance 1"
+      ],
+      [
+        "person \u2014 instance 1"
+      ],
+      [
+        "camera \u2014 instance 1"
+      ]
+    ],
+    "export_channels": [
+      "Object_0.Y",
+      "Object_1.Y"
+    ],
+    "dimensions": [
+      4608,
+      3164
+    ],
+    "gpu": {
+      "allocated_mib": 5125,
+      "reserved_mib": 5894,
+      "peak_mib": 5539,
+      "free_mib": 9236,
+      "total_mib": 16310
+    }
+  }
+}

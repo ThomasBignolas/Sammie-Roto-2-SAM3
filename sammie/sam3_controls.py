@@ -34,7 +34,11 @@ class Sam3Controls(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.text = QLineEdit()
-        self.text.setPlaceholderText('Describe objects, e.g. person in a red coat')
+        self.text.setPlaceholderText('person, camera — separate object searches')
+        self.text.setToolTip('Separate descriptions with commas, semicolons or "and". '
+                             'Example: person and camera. Use double quotes for a single '
+                             'description containing separators: "person in a red and white coat". '
+                             'Finding more objects preserves your existing selection.')
         self.find = QPushButton('Find objects')
         self.box = QPushButton('Box: click two corners')
         self.box.setCheckable(True)
@@ -82,9 +86,9 @@ class Sam3Controls(QWidget):
         return rectangle
 
 
-def select_candidates(parent, masks, frame):
+def select_candidates(parent, masks, frame, labels=None, remaining=16):
     dialog = QDialog(parent)
-    dialog.setWindowTitle('Choose objects to track (maximum 16)')
+    dialog.setWindowTitle(f'Choose objects to add ({remaining} available)')
     dialog.resize(640, 480)
     layout = QVBoxLayout(dialog)
     layout.addWidget(QLabel('Check the instances to keep. Each selected instance gets its own object ID.'))
@@ -98,13 +102,22 @@ def select_candidates(parent, masks, frame):
         preview[selected] = (preview[selected] * 0.5 + np.array([0, 160, 70])).clip(0, 255)
         preview = np.ascontiguousarray(preview)
         qimage = QImage(preview.data, 192, 128, 192*3, QImage.Format_RGB888).copy()
-        item = QListWidgetItem(QIcon(QPixmap.fromImage(qimage)), f'Detected instance {oid}')
+        item = QListWidgetItem(QIcon(QPixmap.fromImage(qimage)),
+                              (labels or {}).get(oid, f'Detected instance {oid}'))
         item.setData(Qt.UserRole, oid)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
         item.setCheckState(Qt.Unchecked)
         items.addItem(item)
     layout.addWidget(items)
+    select_all = QPushButton('Select all')
+    select_all.clicked.connect(lambda: [items.item(i).setCheckState(Qt.Checked) for i in range(items.count())])
+    layout.addWidget(select_all)
     buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    def update_selection():
+        count = sum(items.item(i).checkState() == Qt.Checked for i in range(items.count()))
+        buttons.button(QDialogButtonBox.Ok).setEnabled(0 < count <= remaining)
+    items.itemChanged.connect(update_selection)
+    update_selection()
     buttons.accepted.connect(dialog.accept)
     buttons.rejected.connect(dialog.reject)
     layout.addWidget(buttons)

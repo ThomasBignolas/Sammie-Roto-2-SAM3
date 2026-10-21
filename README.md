@@ -12,6 +12,8 @@ This development version adds Meta's official SAM 3 and SAM 3.1 video predictors
 
 Load footage, select **SAM 3** or **SAM 3.1**, click **Load Model**, then add points or use **Find objects**. Select the detected instances, track, refine in the existing Matting tab, and export.
 
+**Multiple text selections:** `person, camera` and `person and camera` now search both concepts independently. Select both labeled results; subsequent searches add objects without clearing earlier selections. Enable **Combine All Objects** in Matting if you want one combined matte. See [multi-concept behavior and validation](docs/SAM3_MULTI_CONCEPTS.md).
+
 Read the [Windows setup and workflow](docs/SAM3_WINDOWS.md), [architecture and compatibility](docs/SAM3_ARCHITECTURE.md), [test results and limitations](docs/VALIDATION.md), and [model license notes](docs/MODEL_LICENSES.md).
 
 **Validation status:** 23 automated tests and real trained-checkpoint CUDA tests pass on a 16 GB RTX 5060 Ti. SAM 2, SAM 3 and SAM 3.1 were exercised; SAM 3 / 3.1 tests include text/box detection, independent objects, bidirectional tracking, corrections, sequential MatAnyone refinement and full-resolution alpha exports. The actual MainWindow controls were also tested with both SAM 3 models and a switch back to SAM 2. See the validation document for measured results and limits; arbitrarily long shots and production-quality roto are not guaranteed by these tests.

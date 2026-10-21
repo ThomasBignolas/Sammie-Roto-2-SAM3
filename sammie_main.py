@@ -2246,16 +2246,20 @@ class MainWindow(QMainWindow):
         finally:
             progress.close()
         if not masks:
-            controls.status.setText('No matching objects found. Try a different description or box.')
+            controls.status.setText('No matching objects found. Existing selections were kept. Try a different description or box.')
             return
-        selected = select_candidates(self, masks, frame)
+        selected = select_candidates(self, masks, frame, self.sam_manager.candidate_labels,
+                                     remaining=16-len(self.sam_manager.id_map))
         records = self.sam_manager.accept_candidates(selected)
         for record in records:
             self.point_manager.points.append(record)
             self.point_manager._notify('add', point=record)
         self.settings_mgr.save_points(self.point_manager.points)
         self._update_current_frame_display()
-        controls.status.setText(f'{len(records)} objects selected. Add point corrections, then track.')
+        message = f'{len(records)} objects added; {len(self.sam_manager.id_map)} selected in total. Add corrections, then track.'
+        if self.sam_manager.discovery_misses:
+            message += ' No matches for: ' + ', '.join(self.sam_manager.discovery_misses)
+        controls.status.setText(message)
 
     @segmentation_action
     def track_objects(self):

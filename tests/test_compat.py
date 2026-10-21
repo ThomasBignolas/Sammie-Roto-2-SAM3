@@ -35,14 +35,17 @@ class MultiplexCompatibilityTests(unittest.TestCase):
             yield {'frame': 1}
         engine = Sam3Engine()
         engine.version, engine.session = 'SAM 3.1', 'test'
+        engine.sessions = {0: 'test'}
         engine.predictor = SimpleNamespace(
             model=SimpleNamespace(add_action_history=add_action_history),
             _all_inference_states={'test': {'state': state}}, handle_stream_request=stream)
         fake_torch = SimpleNamespace(inference_mode=contextlib.nullcontext,
                                     autocast=lambda *a, **k: contextlib.nullcontext(), bfloat16=None)
-        with patch.dict('sys.modules', {'torch': fake_torch}), patch.object(engine, 'output', side_effect=lambda x, _: x):
+        with patch.dict('sys.modules', {'torch': fake_torch}), \
+                patch.object(engine, 'output', side_effect=lambda x, _: {'frame': x['frame'], 'masks': {}}), \
+                patch.object(engine, 'stats', return_value={}):
             iterator = engine.propagate({'selected_object_ids': [1, 2], 'start_frame_index': 0}, '.')
-            self.assertEqual(next(iterator), {'frame': 0})
+            self.assertEqual(next(iterator), {'frame': 0, 'masks': {}, 'gpu': {}})
             iterator.close()  # Includes cancellation, not just normal completion.
         self.assertEqual(state['action_history'], [existing, {'type': 'propagation_partial', 'obj_ids': [1, 2]}])
 

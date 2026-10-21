@@ -1,5 +1,6 @@
 import contextlib
 import copy
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -69,6 +70,12 @@ class FakeWorker:
         request = kwargs['request']
         if request['type'] == 'add_prompt':
             masks = self.masks
+            if request.get('text') == 'camera':
+                masks = {5: self.masks[8]}  # native IDs overlap between concepts
+            if request.get('text') == 'missing':
+                masks = {}
+            from sammie.backends.concepts import scoped_id
+            masks = {scoped_id(request.get('group_id', 0), oid): mask for oid, mask in masks.items()}
             if 'points' in request:
                 masks = {request['obj_id']: next(iter(self.masks.values()))}
             return self.result(request['frame_index'], masks)
@@ -84,7 +91,10 @@ class FakeWorker:
         try:
             for frame in range(start-1 if reverse else start, end + (-1 if reverse else 1), -1 if reverse else 1):
                 # Include disappearance to test stale mask invalidation.
-                yield self.result(frame, {} if frame == 2 else self.masks)
+                from sammie.backends.concepts import split_id
+                masks = {oid: self.masks[8 if split_id(oid)[0] else split_id(oid)[1]]
+                         for oid in request.get('selected_object_ids', self.masks)}
+                yield self.result(frame, {} if frame == 2 else masks)
         finally:
             self.stream_closed = True
 
@@ -140,7 +150,8 @@ class BackendTests(unittest.TestCase):
 
     def test_box_uses_official_normalized_xywh(self):
         self.backend.discover(0, box=[8, 12, 40, 36])
-        req = self.worker.calls[-1][1]['request']
+        req = next(c[1]['request'] for c in reversed(self.worker.calls)
+                   if c[0] == 'request' and c[1]['request']['type'] == 'add_prompt')
         self.assertEqual(req['bounding_boxes'], [[.1, .25, .4, .5]])
 
     def test_correction_preserves_other_object_and_restarts_tracking(self):
@@ -272,6 +283,57 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.backend.journal, [])
         self.backend.replay_points(records)
         self.assertEqual(set(self.backend.id_map.values()), {0, 1})
+
+    def test_separate_concept_syntax_preserves_quoted_descriptions(self):
+        from sammie.backends.concepts import split_concepts
+        for text in ('person, camera', 'person and camera', 'person; camera', 'person\ncamera'):
+            self.assertEqual(split_concepts(text), ['person', 'camera'])
+        self.assertEqual(split_concepts('person, PERSON and camera'), ['person', 'camera'])
+        self.assertEqual(split_concepts('"person in a red and white coat"; camera'),
+                         ['person in a red and white coat', 'camera'])
+        self.assertEqual(split_concepts('person holding a camera'), ['person holding a camera'])
+        with self.assertRaises(ValueError): split_concepts('"unclosed')
+
+    def test_two_concepts_keep_colliding_native_ids_and_replay(self):
+        found = self.backend.discover(0, text='person and camera')
+        self.assertEqual(set(found), {5, 8, 1000005})
+        points = self.backend.accept_candidates([5, 1000005])
+        self.assertEqual(self.backend.id_map, {5: 0, 1000005: 1})
+        self.assertEqual([p['query']['text'] for p in points], ['person', 'camera'])
+        self.backend.reset_session()
+        self.backend.replay_points(json.loads(json.dumps(points)))
+        self.assertEqual(self.backend.id_map, {5: 0, 1000005: 1})
+        self.assertTrue(all(set(masks) == {0, 1} for _, masks in self.backend.iter_masks(0, 3)))
+        self.backend.remove_object(0)
+        self.assertEqual(self.backend.id_map, {1000005: 1})
+
+    def test_additive_discovery_cancel_and_no_matches_keep_committed_masks(self):
+        self.backend.discover(0, text='person')
+        old = self.backend.accept_candidates([5])
+        path = self.root/'masks/00000/0.png'
+        contents = path.read_bytes()
+        self.backend.discover(0, text='camera')
+        self.assertEqual(self.backend.accept_candidates([]), [])
+        self.assertEqual(self.backend.journal, old)
+        self.assertEqual(self.backend.id_map, {5: 0})
+        self.assertEqual(path.read_bytes(), contents)
+        self.assertFalse(self.backend.discover(0, text='missing'))
+        self.assertEqual(self.backend.journal, old)
+        found = self.backend.discover(0, text='camera')
+        added = self.backend.accept_candidates(list(found))
+        self.assertEqual(added[0]['object_id'], 1)
+        self.assertEqual(path.read_bytes(), contents)
+        self.backend.segment_image(2, 1, [[25, 10]], [1])
+        req = self.worker.calls[-1][1]['request']
+        self.assertEqual(req['obj_id'], 1000005)
+        self.assertEqual(path.read_bytes(), contents)
+
+    def test_partial_concept_miss_keeps_successful_search(self):
+        found = self.backend.discover(0, text='missing, camera')
+        self.assertEqual(self.backend.discovery_misses, ['missing'])
+        points = self.backend.accept_candidates(list(found))
+        self.assertEqual(len(points), 1)
+        self.assertEqual(points[0]['query']['text'], 'camera')
 
 
 if __name__ == '__main__':
