@@ -108,3 +108,13 @@ See [AOV validation](AOV_VALIDATION.md). Core inference is tested with real publ
 ```
 
 The validation scripts create/use isolated `.test-output` directories. They do not overwrite the supplied project. `validate_aov_ui` requires an isolated copy and runs actual inference/export through the tab; only unrelated SAM startup and native folder selection are replaced for automation.
+
+## Optional recovered foreground RGB
+
+The AOV tab also supports the local optional **CorridorKey Foreground RGB** pass.
+It can run by itself, or alongside depth and normals, and requires an existing
+selected alpha. See [the CorridorKey workflow](CORRIDORKEY.md) before using it.
+`foreground.R/G/B` is straight recovered foreground color; `foreground.A` is the
+unchanged alpha used for that recovery. Existing plate, alpha, depth and normal
+layers keep their names. An explicitly selected original EXR override supplies
+both the plate RGB and the foreground input, in the selected color space.

@@ -18,6 +18,7 @@ class MatteLayers:
         self.folder = self.root/('matting' if self.source == 'matting' else 'masks')
         self.extension = job.get('extension', 'png')
         self.ids = sorted({int(p['object_id']) for p in job.get('points', []) if 'object_id' in p})
+        self.guide_ids = list(self.ids)
         if any(i < 0 for i in self.ids):
             raise ValueError('Invalid object ID in alpha export.')
         self.combined = (self.source == 'matting' and self.session.get('matany_combined', False)
@@ -30,7 +31,7 @@ class MatteLayers:
         self.missing = {}
         for oid in self.ids:
             missing = [i for i in indices if not self.path(i, oid).is_file()]
-            if len(missing) == len(indices):
+            if len(missing) == len(indices) and not job.get('allow_empty_objects', False):
                 raise ValueError(f'No {self.source} alpha for object {oid} in this range. '
                                  'Generate it first or choose the correct Alpha source.')
             if missing:
@@ -101,6 +102,10 @@ class MatteLayers:
                     fn = core.apply_matany_postprocessing if self.source == 'matting' else core.apply_mask_postprocessing
                     alpha = alpha_float(fn(raw))
                 alpha = alpha_float(alpha)
+                if self.source == 'matting' and png.is_file():
+                    from sammie.opaque_core import apply_from_files
+                    alpha = apply_from_files(alpha, self.root, frame,
+                        self.guide_ids if self.combined else [oid], self.session)
                 if alpha.shape != self.shape:
                     raise ValueError(f'Alpha dimensions do not match the plate at frame {frame}, object {oid}.')
                 channels[self.names[oid]] = alpha

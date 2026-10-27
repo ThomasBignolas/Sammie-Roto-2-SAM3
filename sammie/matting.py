@@ -853,15 +853,7 @@ class VideoMaMaManager(MattingManager):
  
             # Load mask — union across all combine_ids in memory, or single object from disk
             if combine_ids:
-                union_mask = None
-                for oid in combine_ids:
-                    mask_path = os.path.join(core.mask_dir, f"{frame_num:05d}", f"{oid}.png")
-                    if not os.path.exists(mask_path):
-                        continue
-                    m = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
-                    if m is None:
-                        continue
-                    union_mask = m if union_mask is None else np.maximum(union_mask, m)
+                union_mask, _ = core.load_combined_mask(frame_num, combine_ids)
                 if union_mask is not None:
                     union_mask = core.apply_mask_postprocessing(union_mask)
                     if crop_rect is not None:
@@ -996,7 +988,7 @@ class VideoMaMaManager(MattingManager):
         windows = self._generate_windows(frames_to_process, batch_size, overlap)
         batches_completed = 0
 
-        # Stores soft alpha mattes (model working resolution, grayscale uint8) for the
+        # Stores soft alpha mattes (model working resolution, float or uint8) for the
         # last `overlap` frames of each batch.  Fed back as mask_frames for the overlap
         # frames of the next batch, giving the model continuity across chunk boundaries.
         # Kept soft (not binarized) so the model sees graduated edge information.
@@ -1078,8 +1070,8 @@ class VideoMaMaManager(MattingManager):
             previous_overlap_masks = []
             for frame_out in output_frames[-overlap:]:
                 alpha_out = cv2.cvtColor(frame_out, cv2.COLOR_RGB2GRAY)
-                if float_output:
-                    alpha_out = (alpha_out*255).clip(0, 255).astype(np.uint8)
+                # Float inference stays float across chunk boundaries; the
+                # pipeline normalizes each uint8/float input frame explicitly.
                 previous_overlap_masks.append(alpha_out)
             # -----------------------------------------
  

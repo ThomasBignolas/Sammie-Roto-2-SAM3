@@ -8,6 +8,7 @@ import cv2
 class AOVSettings:
     depth: bool = True
     normals: bool = True
+    foreground: bool = False
     depth_model: str = 'dvd'
     long_edge: int = 512
     dvd_window: int = 17
@@ -21,8 +22,8 @@ class AOVSettings:
     normal_axes: str = 'native'
 
     def validate(self):
-        if not self.depth and not self.normals:
-            raise ValueError('Select Depth, Normals, or both.')
+        if not self.depth and not self.normals and not self.foreground:
+            raise ValueError('Select Depth, Normals, or CorridorKey foreground.')
         if self.depth_model not in ('dvd', 'vda-small'):
             raise ValueError('Unknown depth model.')
         if self.long_edge not in (384, 512, 640, 768, 1024):

@@ -139,7 +139,8 @@ class VideoInferencePipeline:
 
         Args:
             cond_frames (list[np.ndarray]): List of RGB uint8 arrays for conditioning.
-            mask_frames (list[np.ndarray]): List of RGB or grayscale uint8 arrays for the masks.
+            mask_frames (list[np.ndarray]): RGB/grayscale uint8 masks or float masks
+                in [0,1]. Mixed types are supported for float overlap feedback.
             seed (int): Random seed for generation.
             fps (int): Frames per second to condition the model with.
             motion_bucket_id (int): Motion bucket ID for conditioning.
@@ -171,6 +172,11 @@ class VideoInferencePipeline:
             mask_video_tensor = mask_video_tensor.repeat(1, 1, 3, 1, 1)
 
         with torch.no_grad():
+            # VAE sampling must use the requested seed too. Keep its generator
+            # separate from the original CPU UNet-noise stream, and never reseed
+            # the application's global RNG. MPS uses diffusers' CPU fallback.
+            sampling_device = 'cpu' if self.device.type == 'mps' else self.device
+            vae_generator = torch.Generator(device=sampling_device).manual_seed(seed)
             # --- 2. Build zero image embeddings ---
             # CLIP conditioning is not used by this fine-tuned model. The UNet was trained
             # with zeroed encoder_hidden_states, so we construct the zero tensor directly
@@ -185,13 +191,13 @@ class VideoInferencePipeline:
             if self.enable_model_cpu_offload:
                 self.vae.to(self.device)
 
-            cond_latents = self._tensor_to_vae_latent(cond_video_tensor.to(self.weight_dtype), progress_callback=progress_callback, stage="Encoding video")
+            cond_latents = self._tensor_to_vae_latent(cond_video_tensor.to(self.weight_dtype), progress_callback=progress_callback, stage="Encoding video", generator=vae_generator)
             cond_latents = cond_latents / self.vae.config.scaling_factor
             _notify(2, "VAE encoding...")
             
             
 
-            mask_latents = self._tensor_to_vae_latent(mask_video_tensor.to(self.weight_dtype), progress_callback=progress_callback, stage="Encoding mask")
+            mask_latents = self._tensor_to_vae_latent(mask_video_tensor.to(self.weight_dtype), progress_callback=progress_callback, stage="Encoding mask", generator=vae_generator)
             mask_latents = mask_latents / self.vae.config.scaling_factor
             _notify(2, "VAE encoding...")
 
@@ -267,20 +273,29 @@ class VideoInferencePipeline:
             return output_frames
 
     def _cv2_to_tensor(self, frames: list) -> torch.Tensor:
-        """Converts a list of RGB uint8 arrays (H, W, 3) or grayscale (H, W) arrays
+        """Convert RGB/grayscale uint8 [0,255] or floating [0,1] arrays
         to a normalized float video tensor of shape (1, F, 3, H, W) in [-1, 1]."""
         tensors = []
         for f in frames:
             arr = np.asarray(f)
+            if arr.dtype != np.uint8 and not np.issubdtype(arr.dtype, np.floating):
+                raise ValueError('VideoMaMa frames must be uint8 or float in [0,1]')
+            if np.issubdtype(arr.dtype, np.floating) and (
+                    not np.isfinite(arr).all() or np.any(arr < 0) or np.any(arr > 1)):
+                raise ValueError('Floating VideoMaMa frames must be finite and in [0,1]')
+            if arr.ndim not in (2, 3) or (arr.ndim == 3 and arr.shape[-1] != 3):
+                raise ValueError('VideoMaMa frames must be HxW or HxWx3')
             if arr.ndim == 2:
                 # Grayscale -> replicate to 3 channels
                 arr = np.stack([arr] * 3, axis=-1)
-            t = torch.from_numpy(arr.copy()).permute(2, 0, 1).float() / 255.0  # (3, H, W) in [0, 1]
+            t = torch.from_numpy(arr.copy()).permute(2, 0, 1).float()
+            if arr.dtype == np.uint8:
+                t = t / 255.0
             tensors.append(t)
         video_tensor = torch.stack(tensors).unsqueeze(0)  # (1, F, 3, H, W)
         return video_tensor * 2.0 - 1.0  # normalize to [-1, 1]
 
-    def _tensor_to_vae_latent(self, t: torch.Tensor, progress_callback=None, stage="VAE"):
+    def _tensor_to_vae_latent(self, t: torch.Tensor, progress_callback=None, stage="VAE", generator=None):
         """Encodes a video tensor into the VAE's latent space with optional chunking."""
         batch_size, video_length = t.shape[0], t.shape[1]
         t = t.reshape(t.shape[0] * t.shape[1], *t.shape[2:])
@@ -291,7 +306,7 @@ class VideoInferencePipeline:
             if progress_callback is not None:
                 progress_callback(i, t.shape[0], f"{stage} frame {i // self.vae_encode_chunk_size + 1}")
             chunk = t[i: i + self.vae_encode_chunk_size]
-            chunk_latents = self.vae.encode(chunk).latent_dist.sample()
+            chunk_latents = self.vae.encode(chunk).latent_dist.sample(generator=generator)
             latents_list.append(chunk_latents)
 
         latents = torch.cat(latents_list, dim=0)

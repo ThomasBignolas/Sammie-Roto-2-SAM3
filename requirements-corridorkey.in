@@ -1,0 +1,11 @@
+# Optional isolated worker. Do not install into the Sammie UI environment.
+# This Torch combination was exercised on the RTX 5060 Ti; upstream pins 2.8.0.
+torch==2.10.0+cu128
+torchvision==0.25.0+cu128
+numpy==1.26.4
+opencv-python-headless==4.11.0.86
+timm==1.0.26
+safetensors==0.8.0
+huggingface-hub==0.36.2
+OpenEXR==3.4.4
+Pillow==11.3.0

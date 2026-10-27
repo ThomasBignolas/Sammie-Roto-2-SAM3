@@ -48,7 +48,7 @@ def write_exr(path, channels, metadata):
 def export_sequence(job, progress=lambda done, total, message: None):
     settings = AOVSettings.from_dict(job['settings'])
     enabled = [kind for kind, yes in [('depth', settings.depth), ('normals', settings.normals)] if yes]
-    if not enabled:
+    if not enabled and not settings.foreground:
         raise ValueError('Select at least one AOV to export.')
     passes = {}
     indices = list(range(job['first'], job['last']+1))
@@ -60,13 +60,33 @@ def export_sequence(job, progress=lambda done, total, message: None):
             raise ValueError(f'{kind} is missing or its settings changed. Generate the requested range first.')
         passes[kind] = found
     shapes = {tuple(m['source_shape']) for _, m in passes.values()}
+    foreground = None
+    if settings.foreground:
+        from sammie.foreground.config import ForegroundSettings
+        from sammie.foreground.cache import manifest, alpha_hash, read_result
+        from sammie.foreground.color import source_path, load_rgb
+        from .cache import fingerprint
+        foreground = ForegroundSettings.from_dict(job.get('foreground_settings', {})).validate()
+        foreground_manifest = manifest(job['root'], foreground)
+        if not foreground_manifest or not set(map(str, indices)).issubset(foreground_manifest['records']):
+            raise ValueError('CorridorKey foreground is missing or settings changed. Generate the requested range first.')
+        shapes.add(tuple(foreground_manifest['shape']))
     if len(shapes) != 1:
         raise ValueError('Cached AOV dimensions differ. Regenerate this range.')
     shape = shapes.pop()
     mattes = None
-    if job.get('include_mattes', False):
+    if job.get('include_mattes', False) or foreground:
         from .matte_layers import MatteLayers
         mattes = MatteLayers(job, shape)  # Validate before writing any frames.
+    if foreground:
+        # Reject changed selected alpha/plate before creating a partial delivery.
+        for frame in indices:
+            record = foreground_manifest['records'][str(frame)]
+            if alpha_hash(mattes.channels(frame)['A']) != record['alpha_sha256']:
+                raise ValueError('Selected alpha changed (including ViTMatte). Regenerate CorridorKey before export.')
+            path = source_path(job['root'], frame, job.get('extension','png'), foreground)
+            if fingerprint(path)['sha256'] != record['source_sha256']:
+                raise ValueError('CorridorKey source plate changed. Regenerate before export.')
     destination = Path(job['destination'])
     destination.mkdir(parents=True, exist_ok=True)
     # Preflight all names before writing so unrelated exports are never overwritten.
@@ -79,22 +99,40 @@ def export_sequence(job, progress=lambda done, total, message: None):
                     passes={k: m for k, (_, m) in passes.items()})
     if job.get('include_plate', False):
         metadata['plate'] = 'R/G/B: original imported display-referred RGB, unpremultiplied, no color transform; not scene-linear'
-    if mattes:
+        if foreground:
+            metadata['plate'] = f'R/G/B: original CorridorKey input plate, straight {foreground.color_space}; no exposure change'
+    if mattes and job.get('include_mattes', False):
         metadata['alpha'] = mattes.metadata()
+    if foreground:
+        from dataclasses import asdict
+        metadata['foreground'] = dict(channels='foreground.R/G/B: recovered straight RGB; foreground.A: unchanged selected alpha',
+            color_space=foreground.color_space, settings=asdict(foreground),
+            model='Public CorridorKey 1.0 / CorridorKeyBlue 1.0, not CK2.0',
+            code=foreground_manifest['code'], weights=foreground_manifest['weights'],
+            alpha=mattes.metadata(), temporal='Independent frames; existing temporally validated alpha is preserved')
     for i, frame in enumerate(indices):
         channels = {}
+        matte_channels = mattes.channels(frame) if mattes else {}
+        foreground_source = None
+        if foreground:
+            recovered, alpha, foreground_source, _ = read_result(job, frame, foreground, mattes, matte_channels['A'])
+            channels.update({f'foreground.{c}': recovered[..., j] for j,c in enumerate('RGB')})
+            channels['foreground.A'] = alpha
         for kind, (folder, manifest) in passes.items():
             value = np.load(folder/f'{frame:05d}.npy', allow_pickle=False)
             channels.update(channel_data(value, manifest, kind))
         if job.get('include_plate', False):
-            source = Path(job['root'])/'frames'/f"{frame:05d}.{job.get('extension', 'png')}"
-            rgb = cv2.imread(str(source), cv2.IMREAD_COLOR)
-            if rgb is None or rgb.shape[:2] != shape:
-                raise ValueError(f'Missing or misaligned original plate at frame {frame}.')
-            rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB).astype(np.float32)/255.
+            if foreground_source is not None:
+                rgb = foreground_source
+            else:
+                source = Path(job['root'])/'frames'/f"{frame:05d}.{job.get('extension', 'png')}"
+                rgb = cv2.imread(str(source), cv2.IMREAD_COLOR)
+                if rgb is None or rgb.shape[:2] != shape:
+                    raise ValueError(f'Missing or misaligned original plate at frame {frame}.')
+                rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB).astype(np.float32)/255.
             channels.update({c: rgb[..., j] for j, c in enumerate('RGB')})
-        if mattes:
-            channels.update(mattes.channels(frame))
+        if mattes and job.get('include_mattes', False):
+            channels.update(matte_channels)
         frame_meta = dict(metadata, source_frame=frame, export_frame=job['start_number']+i)
         # Full manifests go in JSON, compact conventions/provenance in each EXR.
         frame_meta['passes'] = {k: {'key': m['key'], 'settings': m['settings']} for k, (_, m) in passes.items()}

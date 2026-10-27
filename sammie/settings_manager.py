@@ -110,6 +110,7 @@ class SessionSettings:
     # Segmentation parameters
     sam_model: str = "Base"
     sam3_working_edge: int = 1920
+    contact_seam_width: int = 0  # Combined SAM guide only; pixels at 1080p short edge.
     holes: int = 0
     dots: int = 0
     border_fix: int = 0
@@ -123,6 +124,8 @@ class SessionSettings:
     matany_overlap: int = 2
     matany_chunk: int = 16
     matany_combined: bool = False
+    matany_core_strength: float = 0.0  # Optional opaque-subject constraint after matting.
+    matany_core_inset: int = 16        # Pixels at a 1080px short edge; feather has same width.
 
     # Optional post-VideoMaMa ViTMatte pass (project-local, OFF by default).
     vitmatte_enabled: bool = False
@@ -150,6 +153,7 @@ class SessionSettings:
     aov_include_plate: bool = True
     aov_include_mattes: bool = True
     aov_matte_source: str = 'matting'
+    foreground_settings: dict = field(default_factory=dict)
 
     # Object removal parameters
     removal_method: str = "MiniMax-Remover"
@@ -382,6 +386,7 @@ class SettingsManager:
             'holes': self.session_settings.holes,
             'dots': self.session_settings.dots,
             'border_fix': self.session_settings.border_fix,
+            'contact_seam_width': self.session_settings.contact_seam_width,
             'grow': self.session_settings.grow
         }
     
@@ -389,6 +394,8 @@ class SettingsManager:
         """Get current matting parameters"""
         return {
             'matany_gamma': self.session_settings.matany_gamma,
+            'matany_core_strength': self.session_settings.matany_core_strength,
+            'matany_core_inset': self.session_settings.matany_core_inset,
             'matany_grow': self.session_settings.matany_grow,
             'matany_model': self.session_settings.matany_model,
             'matany_res': self.session_settings.matany_res,

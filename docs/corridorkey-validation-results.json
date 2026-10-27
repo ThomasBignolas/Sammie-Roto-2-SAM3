@@ -1,0 +1,144 @@
+{
+  "date": "2026-10-21",
+  "hardware": {
+    "gpu": "NVIDIA RTX 5060 Ti",
+    "vram_gib": 16,
+    "ram_gib": 64,
+    "os": "Windows"
+  },
+  "tests": {
+    "command": "python -m unittest discover -s tests -q",
+    "passed": 95,
+    "failed": 0,
+    "seconds": 11.219
+  },
+  "gpu_ui_export": [
+    {
+      "passed": true,
+      "frames": [
+        0,
+        1,
+        2
+      ],
+      "dimensions": [
+        4608,
+        3164
+      ],
+      "settings": {
+        "screen": "blue",
+        "resolution": 2048,
+        "exposure_ev": -2.0,
+        "strength": 1.0,
+        "edge_power": 4.0,
+        "despill": 0.0,
+        "device": "cuda",
+        "precision": "fp16",
+        "plate_path": "<original ACEScg EXR sequence>",
+        "plate_first": 993,
+        "color_space": "acescg"
+      },
+      "alpha_source": "base-composition-1k",
+      "alpha_view": "validated",
+      "alpha_max_error": 0.0,
+      "opaque_rgb_max_error": 0.0,
+      "cache_tuning": true,
+      "current_frame_reuse": true,
+      "channels": [
+        "A",
+        "B",
+        "G",
+        "Object_0.Y",
+        "R",
+        "foreground.A",
+        "foreground.B",
+        "foreground.G",
+        "foreground.R"
+      ],
+      "gpu": {
+        "peak_allocated_mib": 5049.490234375,
+        "peak_reserved_mib": 9774.0
+      },
+      "total_seconds": 30.260874999978114,
+      "inference_seconds": [
+        1.892101100005675,
+        1.3773392000002787,
+        1.432364200009033
+      ],
+      "errors": []
+    },
+    {
+      "passed": true,
+      "frames": [
+        0
+      ],
+      "dimensions": [
+        4608,
+        3164
+      ],
+      "settings": {
+        "screen": "blue",
+        "resolution": 1024,
+        "exposure_ev": -2.0,
+        "strength": 1.0,
+        "edge_power": 4.0,
+        "despill": 0.0,
+        "device": "cuda",
+        "precision": "fp16",
+        "plate_path": "",
+        "plate_first": 0,
+        "color_space": "srgb"
+      },
+      "alpha_source": "base-composition-1k",
+      "alpha_view": "validated",
+      "alpha_max_error": 0.0,
+      "opaque_rgb_max_error": 0.0,
+      "cache_tuning": true,
+      "current_frame_reuse": true,
+      "channels": [
+        "A",
+        "B",
+        "G",
+        "Object_0.Y",
+        "R",
+        "foreground.A",
+        "foreground.B",
+        "foreground.G",
+        "foreground.R"
+      ],
+      "gpu": {
+        "peak_allocated_mib": 1585.380859375,
+        "peak_reserved_mib": 2110.0
+      },
+      "total_seconds": 6.337853699980769,
+      "inference_seconds": [
+        1.5517169999657199
+      ],
+      "errors": []
+    }
+  ],
+  "cpu_green_smoke": {
+    "passed": true,
+    "screen": "green",
+    "device": "cpu",
+    "resolution": 1024,
+    "torch": "2.10.0+cu128",
+    "load_seconds": 1.780288899957668,
+    "inference_seconds": 6.848939799994696,
+    "output_dtype": "float32",
+    "output_range": [
+      2.5726076203678137e-14,
+      0.865268886089325
+    ],
+    "evaluation_mode": true,
+    "no_gradients": true,
+    "input_alpha_unchanged": true,
+    "qualification": "Synthetic API/loading smoke test; not foreground accuracy or temporal validation."
+  },
+  "limitations": [
+    "Diagnostic validation without ground-truth foreground.",
+    "Existing ViTMatte Base validated mattes were reused.",
+    "Whole 194-frame shot and second physical PC not tested.",
+    "Model timings exclude final EXR merge/export.",
+    "Public CorridorKey 1.0, not CorridorKey 2.0."
+  ]
+}

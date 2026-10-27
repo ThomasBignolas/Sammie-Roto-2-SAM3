@@ -123,7 +123,11 @@ class RefinementCache:
                 elif current != data['stamp']:
                     if _digest_at_stamp(str(self.root/p), *current) != data['sha256']:
                         return None
-            if any(stamp(p) != s for p, s in active.get('model_files', {}).items()):
+            # Official checkpoints are immutable, pinned by model identity at
+            # generation. Published mattes travel with .sammie projects and do
+            # not need the originating PC's absolute checkpoint path to exist.
+            # Local/custom checkpoints still invalidate on replacement.
+            if settings.checkpoint and any(stamp(p) != s for p, s in active.get('model_files', {}).items()):
                 return None
             entry = active['entries'].get(f'{frame}/{oid}')
             if entry is None:

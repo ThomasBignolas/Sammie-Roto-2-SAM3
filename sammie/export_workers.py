@@ -318,8 +318,9 @@ class SequenceExportWorker(BaseExportWorker):
         if self.settings.output_type.startswith('Matting-'):
             from sammie.settings_manager import get_settings_manager
             manager = get_settings_manager()
-            if (manager.get_session_setting('vitmatte_enabled', False)
-                    and manager.get_session_setting('matany_model') == 'VideoMaMa'
+            if (((manager.get_session_setting('vitmatte_enabled', False)
+                    and manager.get_session_setting('matany_model') == 'VideoMaMa')
+                    or manager.get_session_setting('matany_core_strength',0)>0)
                     and manager.get_session_setting('matany_combined', False)
                     and len(all_object_ids) > 1):
                 all_object_ids = [0]

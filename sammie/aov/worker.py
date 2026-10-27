@@ -21,6 +21,12 @@ def main():
         if job.get('operation') == 'export':
             from .export import export_sequence
             result = export_sequence(job, progress)
+        elif job.get('operation') == 'foreground_prepare':
+            from sammie.foreground.pipeline import prepare
+            result = prepare(job, progress)
+        elif job.get('operation') == 'foreground':
+            from sammie.foreground.pipeline import run_job
+            result = run_job(job, progress)
         else:
             from .pipeline import run_job
             result = run_job(job, progress)

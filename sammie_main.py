@@ -276,7 +276,13 @@ class SegmentationTab(QWidget):
             ("Border Fix:", 0, 10, 0, settings_mgr.get_session_setting("border_fix", 0), "border_fix",
             "Fix artifacts at the edge of the frame by extending masks towards the edge."),
             ("Shrink/Grow:", -20, 20, 0, settings_mgr.get_session_setting("grow", 0), "grow",
-            "Shrink (erode) or grow (dilate) the segmented regions.")
+            "Shrink (erode) or grow (dilate) the segmented regions."),
+            ("Contact seams:", 0, 20, 0, settings_mgr.get_session_setting("contact_seam_width", 0), "contact_seam_width",
+            "0 = OFF. Narrow-gap tolerance between distinct objects, in pixels at a 1080p short edge. "
+            "Also completes small enclosed remnants touching the repaired contact. "
+            "Use only for touching opaque foreground objects. Preview in Segmentation-Matte with all objects visible. "
+            "Original individual masks stay unchanged. Enable Combine All Objects for matting, then rerun matting and refinement. "
+            "Real narrow background gaps can also be closed; use the lowest effective value.")
         ]
         
         for i, (label_text, min_val, max_val, default_val, current_val, attr_prefix, tooltip) in enumerate(slider_configs):
@@ -410,7 +416,8 @@ class SegmentationTab(QWidget):
             ("holes", self.holes_slider, self.holes_value),
             ("dots", self.dots_slider, self.dots_value),
             ("border_fix", self.border_fix_slider, self.border_fix_value),
-            ("grow", self.grow_slider, self.grow_value)
+            ("grow", self.grow_slider, self.grow_value),
+            ("contact_seam_width", self.contact_seam_width_slider, self.contact_seam_width_value)
         ]
         
         for setting_key, slider, value_label in slider_mappings:
@@ -442,6 +449,9 @@ class MattingTab(QWidget):
         self.clear_matting_btn = QPushButton("Clear Matting")
         self.clear_matting_btn.setToolTip("Remove all matting data")
         matting_layout.addWidget(self.clear_matting_btn)
+        self.inspect_matting_btn = QPushButton("Inspect Matte Quality")
+        self.inspect_matting_btn.setToolTip("Review possible holes and leakage on the current frame, without changing alpha.")
+        matting_layout.addWidget(self.inspect_matting_btn)
         layout.addWidget(matting_group)
         
         # MatAnyone Processing settings
@@ -560,6 +570,14 @@ class MattingTab(QWidget):
             lambda v: f"{v/100.0:.1f}", lambda v: int(v * 100), lambda v: v / 100.0),
             ("Shrink/Grow:", -20, 20, "matany_grow", 0,
             "Shrink (erode) or grow (dilate) the matted regions.",
+            lambda v: str(v), lambda v: v, lambda v: v),
+            ("Opaque core:", 0, 100, "matany_core_strength", 0.0,
+            "0 = OFF. Hold opaque interiors solid using the current segmentation guide. "
+            "For opaque people/props only, not glass or transparent fabric. Reversible; applies to preview and exports without rerunning models.",
+            lambda v: f"{v}%", lambda v: round(v*100), lambda v: v/100),
+            ("Core inset:", 1, 100, "matany_core_inset", 16,
+            "Pixels at a 1080p short edge left unchanged near the guide silhouette. "
+            "A second band of the same width feathers into the solid core. Increase to protect more hair and motion blur.",
             lambda v: str(v), lambda v: v, lambda v: v)
         ]
 
@@ -613,8 +631,10 @@ class MattingTab(QWidget):
                     lambda s=slider, default=default_val, func=slider_func: self._reset_slider_to_default(s, func(default))
                 )
                 # Store references
-                self.shrink_grow_slider = slider
-                self.shrink_grow_value = value_label
+                prefix = {'matany_grow': 'shrink_grow', 'matany_core_strength': 'core_strength',
+                          'matany_core_inset': 'core_inset'}[setting_key]
+                setattr(self, prefix+'_slider', slider)
+                setattr(self, prefix+'_value', value_label)
         
         layout.addWidget(sliders_group)
 
@@ -744,6 +764,8 @@ class MattingTab(QWidget):
         shrink_grow = settings_mgr.get_session_setting("matany_grow", 0)
         self.shrink_grow_slider.setValue(shrink_grow)
         self.shrink_grow_value.setText(str(shrink_grow))
+        self.core_strength_slider.setValue(round(settings_mgr.get_session_setting('matany_core_strength',0)*100))
+        self.core_inset_slider.setValue(settings_mgr.get_session_setting('matany_core_inset',16))
         self.refinement.load()
 
     def update_matting_status(self, is_propagated):
@@ -1170,6 +1192,7 @@ class MainWindow(QMainWindow):
         self.sidebar.aov_tab.generate_requested.connect(self.run_aovs)
         self.sidebar.aov_tab.export_requested.connect(self.export_aovs)
         self.sidebar.aov_tab.preview_requested.connect(self.preview_aovs)
+        self.sidebar.aov_tab.foreground_test_requested.connect(lambda: self.run_aovs(foreground_only=True, current_only=True))
         self.sidebar.aov_tab.changed.connect(self._update_current_frame_display)
         self._setup_hotkeys()
         self._update_point_editing_state()
@@ -1297,6 +1320,9 @@ class MainWindow(QMainWindow):
             seg_tab.dots_slider.valueChanged.connect(lambda _: self._update_current_frame_display())
             seg_tab.border_fix_slider.valueChanged.connect(lambda _: self._update_current_frame_display())
             seg_tab.grow_slider.valueChanged.connect(lambda _: self._update_current_frame_display())
+            seg_tab.contact_seam_width_slider.valueChanged.connect(lambda _: self._update_current_frame_display())
+            seg_tab.contact_seam_width_slider.sliderReleased.connect(lambda: self.update_status_bar(
+                'Contact seam guide updated. Use combined matting and rerun matting/refinement to update existing alpha.'))
             
             # Store reference to segmentation tab for status updates
             self.segmentation_tab = seg_tab
@@ -1310,12 +1336,15 @@ class MainWindow(QMainWindow):
             # Connect matting tab buttons
             matting_tab.run_matting_btn.clicked.connect(self.run_matting)
             matting_tab.clear_matting_btn.clicked.connect(self.clear_matting)
+            matting_tab.inspect_matting_btn.clicked.connect(self.inspect_matte_quality)
             matting_tab.refinement.run.clicked.connect(self.run_vitmatte)
             matting_tab.refinement.changed.connect(self._update_current_frame_display)
 
             # Connect postprocessing tab sliders
             matting_tab.shrink_grow_slider.valueChanged.connect(lambda _: self._update_current_frame_display())
             matting_tab.gamma_slider.valueChanged.connect(lambda _: self._update_current_frame_display())
+            matting_tab.core_strength_slider.valueChanged.connect(lambda _: self._update_current_frame_display())
+            matting_tab.core_inset_slider.valueChanged.connect(lambda _: self._update_current_frame_display())
 
 
             # Store reference to matting tab for status updates
@@ -1677,7 +1706,7 @@ class MainWindow(QMainWindow):
         view_controls_layout.addWidget(QLabel("View:"))
         self.view_combo = QComboBox()
         self.view_combo.addItems([
-            "Segmentation-Edit", "Segmentation-Matte", "Segmentation-BGcolor", "Matting-Matte", "Matting-BGcolor", "ObjectRemoval", "AOV-Depth", "AOV-Normals", "None"
+            "Segmentation-Edit", "Segmentation-Matte", "Segmentation-BGcolor", "Matting-Matte", "Matting-BGcolor", "ObjectRemoval", "AOV-Depth", "AOV-Normals", "AOV-Foreground", "AOV-Foreground-BGcolor", "None"
         ])
 
         # Always reset the view to "Segmentation-Edit"
@@ -1760,7 +1789,7 @@ class MainWindow(QMainWindow):
             self.color_picker.color_changed.connect(self._on_bgcolor_changed)
             self.dynamic_widgets_layout.addWidget(self.color_picker)
             
-        elif current_view == "Matting-BGcolor":
+        elif current_view in ("Matting-BGcolor", "AOV-Foreground-BGcolor"):
             # Add color picker
             default_color = getattr(settings_mgr.app_settings, 'default_bgcolor', (0, 255, 0))
             bgcolor = settings_mgr.get_session_setting("bgcolor", default_color)
@@ -1776,7 +1805,7 @@ class MainWindow(QMainWindow):
             self.show_removal_mask_checkbox.stateChanged.connect(self.on_checkbox_changed)
             self.dynamic_widgets_layout.addWidget(self.show_removal_mask_checkbox)
 
-        if current_view in ('Segmentation-BGcolor', 'Matting-BGcolor'):
+        if current_view in ('Segmentation-BGcolor', 'Matting-BGcolor', 'AOV-Foreground-BGcolor'):
             self._add_background_choice()
 
     def _clear_dynamic_widgets(self):
@@ -2503,6 +2532,18 @@ class MainWindow(QMainWindow):
         else:
             print("Points must be added on the Segmentation tab before matting")
 
+    def inspect_matte_quality(self):
+        from sammie.matte_quality import load_inspection
+        from sammie.matte_quality_ui import MatteQualityDialog
+        if self.is_playing:
+            self.toggle_play_pause()
+        try:
+            frame = self.frame_slider.value()
+            rgb, alpha, guide = load_inspection(frame, self.point_manager.points)
+            MatteQualityDialog(rgb, alpha, guide, frame, self).exec()
+        except Exception as exc:
+            show_message_dialog(self, title='Matte quality inspection', message=str(exc), type='warning')
+
     def run_vitmatte(self, checked=False, manage_models=True):
         """Refine cached VideoMaMa results without rerunning segmentation or matting."""
         from sammie.refinement.algorithms import RefinementSettings
@@ -2537,20 +2578,24 @@ class MainWindow(QMainWindow):
             self._update_current_frame_display()
 
     def preview_aovs(self, label):
-        target = {'Depth': 'AOV-Depth', 'Normals': 'AOV-Normals', 'Original plate': 'None'}[label]
+        target = {'Depth': 'AOV-Depth', 'Normals': 'AOV-Normals', 'Original plate': 'None',
+                  'Recovered foreground': 'AOV-Foreground', 'Foreground on background': 'AOV-Foreground-BGcolor'}[label]
         self.view_combo.setCurrentText(target)
         self._update_current_frame_display()
 
-    def run_aovs(self):
+    def run_aovs(self, foreground_only=False, current_only=False):
+        from dataclasses import asdict
         from sammie.aov.ui import AOVDialog
         tab = self.sidebar.aov_tab
         offloaded = False
         try:
-            tab.settings().validate()
+            options = tab.settings().validate()
+            if options.foreground:
+                tab.foreground.settings().validate()
             if core.VideoInfo.total_frames < 1:
                 raise ValueError('Import a video or image sequence first.')
             source = str(self.settings_mgr.get_session_setting('video_file_path', '')).lower()
-            if source.endswith(('.exr', '.hdr')):
+            if source.endswith(('.exr', '.hdr')) and (options.depth or options.normals) and not foreground_only:
                 raise ValueError('AOV models need display-referred RGB. Import an sRGB/Rec.709 proxy of this linear EXR/HDR plate.')
             if self.is_playing:
                 self.toggle_play_pause()
@@ -2559,8 +2604,19 @@ class MainWindow(QMainWindow):
             self.matany_manager.unload_matting_model()
             self.removal_manager.unload_minimax_model()
             self.removal_manager.unload_propainterx_model()
-            dialog = AOVDialog(self, tab.make_job())
-            report, failure = dialog.execute()
+            job = tab.make_job()
+            job.update(points=self.point_manager.points, session=asdict(self.settings_mgr.session_settings))
+            if current_only:
+                job.update(first=self.frame_slider.value(), last=self.frame_slider.value())
+            report, failure = {'passes': {}}, None
+            if (options.depth or options.normals) and not foreground_only:
+                report, failure = AOVDialog(self, job).execute()
+            if not failure and options.foreground:
+                prepared, failure = AOVDialog(self, dict(job, operation='foreground_prepare')).execute()
+                if not failure and prepared:
+                    foreground, failure = AOVDialog(self, dict(job, operation='foreground', prepared=prepared['prepared'])).execute()
+                    if foreground and not failure:
+                        report['passes'].update(foreground['passes'])
             if failure:
                 tab.status.setText(failure)
                 show_message_dialog(self, title='AOV generation', message=failure, type='warning')
@@ -2575,6 +2631,8 @@ class MainWindow(QMainWindow):
                             text += f", {entry['gpu']['peak_allocated_mib']:.0f} MiB peak allocated"
                         descriptions.append(text)
                 tab.status.setText('; '.join(descriptions))
+                if foreground_only or (options.foreground and not options.depth and not options.normals):
+                    tab.preview.setCurrentText('Foreground on background')
                 self.preview_aovs(tab.preview.currentText())
         except Exception as error:
             tab.status.setText(str(error))

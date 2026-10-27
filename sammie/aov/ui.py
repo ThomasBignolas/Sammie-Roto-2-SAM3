@@ -19,13 +19,14 @@ class AOVTab(QWidget):
     generate_requested = Signal()
     export_requested = Signal()
     preview_requested = Signal(str)
+    foreground_test_requested = Signal()
     changed = Signal()
 
     def __init__(self):
         super().__init__()
         self.loading = True
         layout = QVBoxLayout(self)
-        title = QLabel('AOVs · Depth and Surface Normals')
+        title = QLabel('AOVs · Depth, Normals and Foreground RGB')
         title.setWordWrap(True)
         layout.addWidget(title)
         group = QGroupBox('Generate from the original plate')
@@ -74,11 +75,18 @@ class AOVTab(QWidget):
                         'Models download on first use. Run install_aov.bat once.')
         notice.setWordWrap(True)
         layout.addWidget(notice)
+        from sammie.foreground.ui import ForegroundControls
+        self.foreground = ForegroundControls()
+        self.controls['foreground'] = self.foreground.enabled
+        self.foreground.enabled.toggled.connect(self.save)
+        self.foreground.changed.connect(self.save)
+        self.foreground.test_requested.connect(self.foreground_test_requested)
+        layout.addWidget(self.foreground)
         self.generate = QPushButton('Generate / Reuse cached AOVs')
         self.generate.clicked.connect(self.generate_requested)
         layout.addWidget(self.generate)
         self.preview = QComboBox()
-        self.preview.addItems(['Depth', 'Normals', 'Original plate'])
+        self.preview.addItems(['Depth', 'Normals', 'Recovered foreground', 'Foreground on background', 'Original plate'])
         self.preview.currentTextChanged.connect(self.preview_requested)
         layout.addWidget(QLabel('Timeline preview:'))
         layout.addWidget(self.preview)
@@ -94,7 +102,8 @@ class AOVTab(QWidget):
             widget.toggled.connect(self.save)
             export_form.addRow(widget)
         self.matte_source.currentIndexChanged.connect(self.save)
-        self.include_mattes.toggled.connect(self.matte_source.setEnabled)
+        self.include_mattes.toggled.connect(lambda yes: self.matte_source.setEnabled(yes or self.foreground.enabled.isChecked()))
+        self.foreground.enabled.toggled.connect(lambda yes: self.matte_source.setEnabled(yes or self.include_mattes.isChecked()))
         export_form.addRow('Alpha source:', self.matte_source)
         self.include_mattes.setToolTip('A is the union of existing object mattes. Named layers retain individual mattes. Generate mattes first or disable this option.')
         layout.addWidget(export_group)
@@ -107,7 +116,7 @@ class AOVTab(QWidget):
         self.export = QPushButton('Export multilayer AOV EXR sequence...')
         self.export.clicked.connect(self.export_requested)
         layout.addWidget(self.export)
-        self.status = QLabel('Uses the timeline In/Out range. No segmentation or matting required.')
+        self.status = QLabel('Uses timeline In/Out. Depth/normals need no matte; CorridorKey requires existing alpha.')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         layout.addStretch()
@@ -129,7 +138,8 @@ class AOVTab(QWidget):
         self.include_plate.setChecked(manager.get_session_setting('aov_include_plate', True))
         self.include_mattes.setChecked(manager.get_session_setting('aov_include_mattes', True))
         self.matte_source.setCurrentIndex(max(0, self.matte_source.findData(manager.get_session_setting('aov_matte_source', 'matting'))))
-        self.matte_source.setEnabled(self.include_mattes.isChecked())
+        self.matte_source.setEnabled(self.include_mattes.isChecked() or self.foreground.enabled.isChecked())
+        self.foreground.load(manager.get_session_setting('foreground_settings', {}))
         self.loading = False
 
     def settings(self):
@@ -148,8 +158,9 @@ class AOVTab(QWidget):
         manager.set_session_setting('aov_include_plate', self.include_plate.isChecked())
         manager.set_session_setting('aov_include_mattes', self.include_mattes.isChecked())
         manager.set_session_setting('aov_matte_source', self.matte_source.currentData())
+        manager.set_session_setting('foreground_settings', asdict(self.foreground.settings()))
         manager.save_session_settings()
-        self.status.setText('Changed model settings require Generate. Export contents and numbering use existing results.')
+        self.status.setText('Model/exposure/alpha changes require Generate. Foreground strength, edge coverage and despill reuse cached predictions.')
         self.changed.emit()
 
     def make_job(self):
@@ -157,6 +168,7 @@ class AOVTab(QWidget):
         first, last, _ = core.get_frame_range()
         return dict(root=str(Path(core.temp_dir).resolve()), first=first, last=last,
                     extension=core.get_frame_extension(), settings=asdict(self.settings()),
+                    foreground_settings=asdict(self.foreground.settings()), matte_source=self.matte_source.currentData(),
                     fps=manager.get_session_setting('video_fps_rational', '') or str(core.VideoInfo.fps or 24),
                     sequence_start=manager.get_session_setting('sequence_start_frame', 0))
 
@@ -188,10 +200,13 @@ class AOVDialog(QDialog):
 
     def execute(self):
         # CPU exports use the UI environment to share its exact matte processing.
-        python = (Path(sys.executable) if self.job.get('operation') == 'export' else
-                  ROOT/'.runtime'/'aov-env'/('Scripts/python.exe' if os.name == 'nt' else 'bin/python'))
+        operation = self.job.get('operation')
+        environment_name = 'corridorkey-env' if operation == 'foreground' else 'aov-env'
+        python = (Path(sys.executable) if operation in ('export', 'foreground_prepare') else
+                  ROOT/'.runtime'/environment_name/('Scripts/python.exe' if os.name == 'nt' else 'bin/python'))
         if not python.is_file():
-            return None, 'AOV runtime is missing. Run install_aov.bat, then try again.'
+            installer = 'install_corridorkey.bat' if operation == 'foreground' else 'install_aov.bat'
+            return None, f'Optional runtime is missing. Run {installer}, then try again.'
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert('PYTHONUNBUFFERED', '1')
         environment.insert('PYTHONPATH', str(ROOT))
@@ -221,7 +236,7 @@ class AOVDialog(QDialog):
         self.read_output()
         path = self.request.with_suffix('.result.json')
         if self.cancelled:
-            self.failure = 'Cancelled. Completed passes remain cached; the interrupted pass can be regenerated.'
+            self.failure = 'Cancelled. Completed AOV passes and CorridorKey frames remain cached; Generate resumes them.'
         elif path.exists():
             self.result = json.loads(path.read_text(encoding='utf-8'))
             self.failure = self.result.get('error')

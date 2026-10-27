@@ -86,6 +86,10 @@ def update_image(slider_value, view_options, points, return_numpy=False, object_
         return _handle_matting_alpha_view(slider_value, view_options, points, return_numpy, object_id_filter)
     elif view_mode == "ObjectRemoval":
         return _handle_object_removal_view(slider_value, view_options, points, return_numpy, object_id_filter)
+    elif view_mode in ('AOV-Foreground', 'AOV-Foreground-BGcolor'):
+        from sammie.foreground.display import preview
+        image = preview(slider_value, points, view_options)
+        return image if return_numpy else _convert_to_qpixmap(image)
     elif view_mode in ('AOV-Depth', 'AOV-Normals'):
         from sammie.aov.display import preview
         options = get_settings_manager().get_session_setting('aov_settings', {})
@@ -147,12 +151,24 @@ def _get_display_mask(frame_number, points, object_id_filter, folder, postproces
         from sammie.refinement.display import selected_alpha
         alpha = selected_alpha(frame_number, points, object_id_filter)
         if alpha is not None:
+            from sammie.opaque_core import apply_to_preview
+            alpha = apply_to_preview(alpha, frame_number, points, object_id_filter)
             return alpha if float_alpha else np.round(alpha*255).astype(np.uint8)
-    mask = core.load_masks_for_frame(frame_number, points, return_combined=True,
+    loader_points = points
+    if (folder == core.matting_dir and get_settings_manager().get_session_setting('matany_combined',False)
+            and len({p['object_id'] for p in points if 'object_id' in p}) > 1):
+        loader_points = [{'object_id':0}]
+    mask = core.load_masks_for_frame(frame_number, loader_points, return_combined=True,
                                       object_id_filter=object_id_filter, folder=folder)
     if mask is None:
         return None
-    return postprocess_fn(mask)
+    mask = postprocess_fn(mask)
+    if folder == core.matting_dir and get_settings_manager().get_session_setting('matany_core_strength', 0):
+        from sammie.opaque_core import apply_to_preview
+        from sammie.refinement.algorithms import alpha_float
+        mask = alpha_float(apply_to_preview(mask, frame_number, points, object_id_filter))
+        return mask if float_alpha else np.round(mask*255).astype(np.uint8)
+    return mask
 
 
 def _maybe_antialias_mask(mask_3channel, view_options):

@@ -371,11 +371,7 @@ def load_masks_for_frame(frame_number, points, return_combined=True, object_id_f
         return None if return_combined else {}
 
     if return_combined:
-        # Combine all masks into a single mask (union operation)
-        combined_mask = np.zeros((VideoInfo.height, VideoInfo.width), dtype=np.uint8)
-        for mask in individual_masks.values():
-            combined_mask = np.maximum(combined_mask, mask)
-        return combined_mask
+        return _combine_mask_arrays(individual_masks.values(), folder)
     else:
         return individual_masks
 
@@ -437,6 +433,15 @@ def resize_to_limit(image, max_size, multiple=8, mask=False, interpolation=None,
     return image
 
 
+def _combine_mask_arrays(masks, folder):
+    from .mask_contacts import combine_masks
+    # Only segmentation guides are repaired. Never close holes in soft alpha,
+    # a single-object matte, or the stored per-object tracking masks.
+    is_segmentation = os.path.normcase(os.path.abspath(folder)) == os.path.normcase(os.path.abspath(mask_dir))
+    width = get_settings_manager().get_session_setting('contact_seam_width', 0) if is_segmentation else 0
+    return combine_masks(masks, width)
+
+
 def load_combined_mask(frame_number, object_ids, folder=None):
     """
     Load and union the mask files for the given object IDs on one frame. 
@@ -455,9 +460,9 @@ def load_combined_mask(frame_number, object_ids, folder=None):
     if folder is None:
         folder = mask_dir
 
-    combined_mask = None
+    masks = []
     loaded_count = 0
-    for object_id in object_ids:
+    for object_id in dict.fromkeys(object_ids):
         mask_path = os.path.join(folder, f"{frame_number:05d}", f"{object_id}.png")
         if not os.path.exists(mask_path):
             continue
@@ -465,9 +470,9 @@ def load_combined_mask(frame_number, object_ids, folder=None):
         if m is None:
             continue
         loaded_count += 1
-        combined_mask = m if combined_mask is None else np.maximum(combined_mask, m)
+        masks.append(m)
 
-    return combined_mask, loaded_count
+    return _combine_mask_arrays(masks, folder), loaded_count
 
 
 # .........................................................................................
