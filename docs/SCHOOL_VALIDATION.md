@@ -62,3 +62,26 @@ manifest, and is checked for ZIP integrity and required application/config files
 Neither Python environments, experimental CK2 runs, downloaded model weights,
 user projects nor credentials are packaged. The tiny upstream smoothing weight
 is retained for the original mask-smoothing feature.
+
+## EXR import and updater release (27 October 2026)
+
+The subsequent `school-2026.10.27-exr` release adds EXR input and a dedicated
+school updater. The expanded suite passed **165 tests**. The
+[EXR validation](EXR_IMPORT.md#executed-validation-27-october-2026) includes a
+real ViTMatte Base CUDA smoke test and describes its limited scale.
+
+The actual previous release ZIP (`dd695c3`) was applied to the separate test
+installation, then migrated using the new archive updater. All packaged file
+hashes matched the new manifest; a repeat source update changed zero files.
+Test project, settings and session files remained byte-identical, and all
+**25 checkpoint files** retained their sizes and modification times. Tests also
+cover refusal of edited source, checksum failures, path collisions and rollback
+after an injected replacement failure.
+
+Dependency reconciliation with `-Models OnDemand -NoLogin -NoShortcut` completed
+successfully in **65.0 seconds**, reusing that installation's existing runtimes,
+models and package caches. All four runtime/CUDA checks, including the SAM Triton
+kernel, passed. The source replacement itself took **0.25 seconds** locally.
+These are diagnostic measurements on this workstation, not download-speed
+estimates, cold installations or tests on another physical PC. No model weights
+or credentials are included in the new release package.
