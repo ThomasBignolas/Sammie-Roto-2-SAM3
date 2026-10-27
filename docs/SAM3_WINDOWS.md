@@ -1,5 +1,10 @@
 # Windows installation and workflow
 
+For the complete current school build, use **`install_school.bat`** and the
+[one-command school installation guide](SCHOOL_INSTALL.md). It also installs
+ViTMatte, AOVs and foreground recovery and can bootstrap Git. The instructions
+below remain available for installing only the original SAM components.
+
 ## Requirements
 
 - Windows x64, Git for Windows, internet access, and a current NVIDIA driver.
@@ -9,7 +14,7 @@
 
 ## Install
 
-Clone the development repository (your GitHub account needs access to this private repository):
+Clone the development repository (the source is public; no GitHub login is needed):
 
 ```powershell
 git clone --branch feature/aov-depth-normals https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3.git

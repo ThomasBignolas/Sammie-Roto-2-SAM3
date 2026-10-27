@@ -6,13 +6,17 @@ It does not replace VideoMaMa or ViTMatte, rerun them, or change their alpha.
 
 ## Install and launch
 
+For the whole current application on another PC, use `install_school.bat` or the
+[one-command download and setup](SCHOOL_INSTALL.md). The individual steps below
+remain useful when adding only CorridorKey to an existing installation.
+
 On this PC, run `install_corridorkey.bat` once, then `run_sam3.bat`.
 Installation was executed with the pinned worker environment. Use this direct
-launcher; the original upstream launcher/updater does not carry this private change.
+launcher; the original upstream launcher/updater does not carry this school change.
 
 On another Windows/NVIDIA school PC:
 
-1. Extract the private source ZIP into a writable local folder. Install Git for
+1. Extract the source ZIP into a writable local folder. Install Git for
    Windows and a current NVIDIA driver supporting CUDA 13.0 for the existing
    main application installer (the isolated CorridorKey worker uses CUDA 12.8).
 2. Run `install_sam3.bat` to install the existing application and SAM runtime.
@@ -184,8 +188,7 @@ The adapter uses the official Hiera/decoder/refiner and input normalization.
 
 CorridorKey's [license](https://github.com/nikopueringer/CorridorKey/blob/97e55a453060745bead1befd293f6e523c4b845c/LICENSE)
 is CC BY-NC-SA with additional terms, including restrictions on repackaging,
-resale, paid inference services and commercial software integration. This private
-school workflow installs it locally as an optional external dependency. It does
+resale, paid inference services and commercial software integration. This school workflow installs it locally as an optional external dependency. It does
 not grant permission for a later commercial or public distribution. Existing
 Sammie, SAM, ViTMatte and other upstream notices remain applicable.
 

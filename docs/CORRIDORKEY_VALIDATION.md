@@ -73,7 +73,7 @@ and API compatibility, not green-screen image quality or full-shot CPU speed.
 
 `install_corridorkey.bat`'s installer was executed successfully on this PC.
 It installs the pinned isolated environment without changing the main UI's
-PyTorch environment. A private ZIP contains this modified source and the
+PyTorch environment. A source ZIP contains this modified source and the
 existing upstream small smoothing weight, with no downloaded model code,
 checkpoints, user footage, Nuke files or credentials. Official dependencies
 are downloaded locally on each PC. A second physical PC has **not** been tested.
