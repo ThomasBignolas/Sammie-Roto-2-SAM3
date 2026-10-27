@@ -139,6 +139,10 @@ approval is still required for the gated SAM checkpoints.
 
 ## Updating and moving between PCs
 
+Newer builds also offer **Help → Check for School Updates → Save, close and update**.
+This waits for Sammie to close, runs the same updater and reopens the app on
+success. Its log is saved under `.runtime/ui-update-*.log`.
+
 Close Sammie, then paste this **one line in CMD**:
 
 ```bat
@@ -180,6 +184,11 @@ environments contain machine-specific paths, and runtime folders contain downloa
 third-party code/models. Install separately on each PC. Copy saved `.sammie`
 projects and footage separately as needed; they are not in the application ZIP.
 Keep source file locations available when opening projects.
+
+For the new working format, move **both** `shot.sammieproj` and its sibling
+`shot.sammie-data` folder. Alternatively, use **File → Pack Portable Project**
+to share a single `.sammie` archive. **File → Set Project** establishes the
+workspace on each PC. See [working projects and Nuke handoff](WORKFLOW.md).
 
 The ZIP includes `SCHOOL_BUILD.json` with the exact commit and SHA-256 of every
 packaged file. Its companion `.zip.sha256` verifies the archive:

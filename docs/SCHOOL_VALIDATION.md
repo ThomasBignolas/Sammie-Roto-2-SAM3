@@ -85,3 +85,13 @@ kernel, passed. The source replacement itself took **0.25 seconds** locally.
 These are diagnostic measurements on this workstation, not download-speed
 estimates, cold installations or tests on another physical PC. No model weights
 or credentials are included in the new release package.
+
+## Working-project workflow release (27 October 2026)
+
+The subsequent workflow build adds Set Project workspaces, incremental working
+project saves, Nuke delivery, range repairs, persisted sequential queues and an
+in-app handoff to the existing updater. **186 automated tests pass.**
+[Workflow validation](WORKFLOW.md#executed-validation-27-october-2026) records the
+real 4K project save measurements, small CUDA queue runs and Nuke 17 graph test.
+Working project descriptors/data folders and workspace configuration are also
+excluded from packaging and protected against source-update replacement.

@@ -13,6 +13,13 @@ For older installations, use the [one-line CMD updater](docs/SCHOOL_INSTALL.md#u
 It downloads the latest published release and preserves cached models, settings
 and projects. Source edits are detected before replacement.
 
+**Working projects and workflow tools:** **File → Set Project** creates a Maya-style
+workspace (`scenes`, `footage`, `exports`, `nuke`). Save once as `.sammieproj`;
+subsequent `Ctrl+S` saves update metadata without rewriting frames or caches.
+**Pack Portable Project** retains `.sammie` sharing. **Send to Nuke**, targeted
+range repairs, a resumable sequential shot queue and **Help → Check for School
+Updates** are also available. [Operation, recovery and measured validation](docs/WORKFLOW.md).
+
 **EXR input:** open or drop an EXR to import one image or its numbered sequence.
 Choose its RGB layer, input color space, preview/model exposure and frame rate.
 The original HDR plate is retained for EXR export; models receive aligned display
@@ -46,7 +53,7 @@ Read the [Windows setup and workflow](docs/SAM3_WINDOWS.md), [architecture and c
 
 **Flickering interior holes:** the contact correction now completes narrow enclosed remnants along repaired seams. Optional **Matting → Postprocessing → Opaque core** holds opaque interiors solid with a feathered inset, shared by preview and EXR export. It is OFF by default and adjustable from cached mattes. See [settings and the frame 145/257 comparisons](docs/OPAQUE_CORE.md).
 
-**Validation status:** 165 automated tests pass, including EXR import/export and safe source updates. Real checkpoint CUDA tests have exercised SAM 2, SAM 3/3.1, matting, DVD v1.1, NormalCrafter and VDA Small on a 16 GB RTX 5060 Ti. SAM 3 / 3.1 tests include text/box detection, independent objects, bidirectional tracking, corrections, sequential MatAnyone refinement and full-resolution alpha exports. The actual MainWindow AOV workflow exports original RGB, existing VideoMaMa alpha, depth and normals in full-resolution multilayer EXRs. The new [CorridorKey validation](docs/CORRIDORKEY_VALIDATION.md) includes real GPU/UI/export runs using ViTMatte Base alpha and a CPU green-model smoke test. See the validation documents for measured results and limits; arbitrarily long shots and production-quality results are not guaranteed by these tests.
+**Validation status:** 186 automated tests pass, including working projects, queue cancellation/recovery, Nuke handoff, EXR import/export and safe source updates. Real checkpoint CUDA tests have exercised SAM 2, SAM 3/3.1, matting, DVD v1.1, NormalCrafter and VDA Small on a 16 GB RTX 5060 Ti. SAM 3 / 3.1 tests include text/box detection, independent objects, bidirectional tracking, corrections, sequential MatAnyone refinement and full-resolution alpha exports. The actual MainWindow AOV workflow exports original RGB, existing VideoMaMa alpha, depth and normals in full-resolution multilayer EXRs. The new [CorridorKey validation](docs/CORRIDORKEY_VALIDATION.md) includes real GPU/UI/export runs using ViTMatte Base alpha and a CPU green-model smoke test. See the validation documents for measured results and limits; arbitrarily long shots and production-quality results are not guaranteed by these tests.
 
 Use `run_sam3.bat` for this version: the original upstream launcher/update mechanism targets upstream releases. The original project documentation follows.
 
