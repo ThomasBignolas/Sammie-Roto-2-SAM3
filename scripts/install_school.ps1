@@ -111,7 +111,11 @@ try {
     }
     Write-Host ''
     Write-Host 'Installation checks passed. Launch run_sam3.bat (or the Sammie-Roto School desktop shortcut).'
-    if ($Models -eq 'OnDemand' -or $SkipSamCheckpoints) { Write-Host 'SAM checkpoints were skipped. Run setup_models.bat before using SAM 3/3.1.' }
+    if (($Models -eq 'OnDemand' -or $SkipSamCheckpoints) -and
+        (-not (Test-Path -LiteralPath (Join-Path $Root 'checkpoints/sam3.pt')) -or
+         -not (Test-Path -LiteralPath (Join-Path $Root 'checkpoints/sam3.1_multiplex.pt')))) {
+        Write-Host 'SAM checkpoints were skipped. Run setup_models.bat for missing SAM 3/3.1 weights.'
+    }
     if ($Models -ne 'All') { Write-Host 'Some model weights download on first use. Rerun install_school.bat -Models All to prefetch every supported model.' }
 } catch {
     Write-Host ("INSTALLATION STOPPED: " + $_.Exception.Message) -ForegroundColor Red

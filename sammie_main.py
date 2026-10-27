@@ -2552,7 +2552,8 @@ class MainWindow(QMainWindow):
             return
         try:
             source_path = str(self.settings_mgr.get_session_setting('video_file_path', '')).lower()
-            if source_path.endswith(('.exr', '.hdr')):
+            from sammie.exr_media import project_info
+            if source_path.endswith(('.exr', '.hdr')) and not project_info(core.temp_dir):
                 raise ValueError('ViTMatte needs display-referred RGB. Export an sRGB/Rec.709 PNG or video proxy of linear EXR/HDR footage, then import that proxy for matting. Alpha export remains linear.')
             settings = RefinementSettings.from_session(self.settings_mgr)
             if manage_models:
@@ -2595,7 +2596,8 @@ class MainWindow(QMainWindow):
             if core.VideoInfo.total_frames < 1:
                 raise ValueError('Import a video or image sequence first.')
             source = str(self.settings_mgr.get_session_setting('video_file_path', '')).lower()
-            if source.endswith(('.exr', '.hdr')) and (options.depth or options.normals) and not foreground_only:
+            from sammie.exr_media import project_info
+            if source.endswith(('.exr', '.hdr')) and not project_info(core.temp_dir) and (options.depth or options.normals) and not foreground_only:
                 raise ValueError('AOV models need display-referred RGB. Import an sRGB/Rec.709 proxy of this linear EXR/HDR plate.')
             if self.is_playing:
                 self.toggle_play_pause()
@@ -3052,13 +3054,15 @@ class MainWindow(QMainWindow):
             self, 
             "Open File", 
             "", 
-            "*.mp4 *.m4v *.mkv *.mov *.avi *webm *.png *.jpg *.jpeg *.bmp *.tiff *.gif *.webp"
+            "Media (*.mp4 *.m4v *.mkv *.mov *.avi *.webm *.png *.jpg *.jpeg *.bmp *.tiff *.gif *.webp *.exr)"
         )
         
         if file_name:  # Only proceed if a file was selected
             success = self.load_file(file_name)
             if not success:
                 print("Failed to load file or loading was cancelled.")
+                if file_name.lower().endswith('.exr'):
+                    return  # EXR preparation keeps the current session on cancel/error.
                 # Reset UI to empty state on failure
                 self.frame_slider.blockSignals(True)
                 self.frame_slider.setRange(0, 0)
@@ -3075,7 +3079,7 @@ class MainWindow(QMainWindow):
         # Check if file type is supported
         supported_extensions = [
             '.mp4', '.m4v', '.mkv', '.mov', '.avi', '.webm',
-            '.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.gif', '.webp'
+            '.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.gif', '.webp', '.exr'
         ]
         
         file_ext = os.path.splitext(file_path)[1].lower()
@@ -3089,6 +3093,19 @@ class MainWindow(QMainWindow):
         
     def load_file(self, file_path):
         """Load a file (consolidated method for both menu and command line usage)"""
+        file_ext = os.path.splitext(file_path)[1].lower()
+        exr_import = None
+        if file_ext == '.exr':
+            # Prepare all pixels before discarding the previous session. Invalid
+            # frames or Cancel leave the old project and its points untouched.
+            try:
+                from sammie.exr_import_ui import prepare_dialog
+                exr_import = prepare_dialog(file_path, core.temp_dir, self)
+                if exr_import is None:
+                    return False
+            except Exception as error:
+                show_message_dialog(self, title='EXR import', message=str(error), type='warning')
+                return False
         # Clear all points and propagation data
         self.point_manager.clear_all()
         self.sam_manager.propagated = False
@@ -3112,7 +3129,23 @@ class MainWindow(QMainWindow):
         file_ext = os.path.splitext(file_path)[1].lower()
         
         try:
-            if file_ext in ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.gif', '.webp']:
+            if exr_import is not None:
+                from fractions import Fraction
+                from sammie.exr_media import commit
+                stage, info = exr_import
+                commit(stage, core.temp_dir)
+                core.VideoInfo.height, core.VideoInfo.width = info['shape']
+                core.VideoInfo.total_frames = framecount = len(info['source_files'])
+                core.VideoInfo.fps_rational = info['fps']
+                core.VideoInfo.fps = float(Fraction(info['fps']))
+                core.VideoInfo.color_space = 1  # Working PNGs use display RGB.
+                self.settings_mgr.set_session_setting('frame_format', 'png')
+                self.settings_mgr.set_session_setting('video_fps_rational', info['fps'])
+                self.settings_mgr.set_session_setting('sequence_start_frame', info['source_numbers'][0])
+                self.settings_mgr.set_session_setting('aov_start_number', info['source_numbers'][0])
+                self.settings_mgr.set_session_setting('foreground_settings', {'color_space': info['options']['color_space']})
+                self.sidebar.load_values_from_settings()
+            elif file_ext in ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.gif', '.webp']:
                 framecount = sammie.load_image_sequence(file_path, parent_window=self)
             else:
                 framecount = sammie.load_video(file_path, parent_window=self)
@@ -3160,7 +3193,12 @@ class MainWindow(QMainWindow):
                 return False
                 
         except Exception as e:
+            if exr_import is not None:
+                from sammie.exr_media import discard
+                discard(exr_import[0])
             print(f"Error loading file {file_path}: {e}")
+            if file_ext == '.exr':
+                show_message_dialog(self, title='EXR import', message=str(e), type='warning')
             return False
 
     def resume_prev_session(self):

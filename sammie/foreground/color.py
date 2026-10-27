@@ -44,6 +44,9 @@ def from_linear709(rgb, space):
 
 def source_path(root, frame, extension, settings):
     if not settings.plate_path:
+        from sammie.exr_media import project_info
+        if project_info(root):
+            return Path(root)/'source_exr'/f'{frame:05d}.exr'
         if extension not in ('png', 'jpg', 'jpeg'):
             raise ValueError('Use display-referred PNG/JPEG frames or select an original EXR override.')
         return Path(root)/'frames'/f'{frame:05d}.{extension}'
@@ -58,6 +61,9 @@ def source_path(root, frame, extension, settings):
 def load_rgb(path):
     path = Path(path)
     if path.suffix.lower() == '.exr':
+        from sammie.exr_media import project_info, project_rgb
+        if path.parent.name == 'source_exr' and project_info(path.parent.parent):
+            return project_rgb(path.parent.parent, int(path.stem))
         import OpenEXR
         import Imath
         f = OpenEXR.InputFile(str(path))

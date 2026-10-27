@@ -383,10 +383,15 @@ class SequenceExportWorker(BaseExportWorker):
                 # Include original frame if requested
                 if self.settings.include_original:
                     original_view_options = {'view_mode': 'None'}
-                    original_array = sammie.update_image(
-                        frame_num, original_view_options, self.points,
-                        return_numpy=True, object_id_filter=None
-                    )
+                    from sammie import core
+                    from sammie.exr_media import project_info, project_rgb
+                    if project_info(core.temp_dir):
+                        original_array = project_rgb(core.temp_dir, frame_num)
+                    else:
+                        original_array = sammie.update_image(
+                            frame_num, original_view_options, self.points,
+                            return_numpy=True, object_id_filter=None
+                        )
                     if original_array is None:
                         raise RuntimeError(f"Missing source frame {frame_num}; export stopped to avoid a frame gap")
                     
@@ -406,7 +411,9 @@ class SequenceExportWorker(BaseExportWorker):
                 
                 # Write EXR file
                 if exr_data:
-                    self._write_exr_file(frame_path, exr_data)
+                    from sammie import core
+                    from sammie.exr_media import project_info
+                    self._write_exr_file(frame_path, exr_data, exr_source=project_info(core.temp_dir))
                     exported_files.append(frame_path)
                 
                 progress = int((i + 1) / self.export_frame_count * 100)
@@ -488,7 +495,7 @@ class SequenceExportWorker(BaseExportWorker):
             self.finished.emit(True, f"Successfully exported {len(exported_files)} PNG frames{frame_range_msg} to {output_dir}")
     
     @staticmethod
-    def _write_exr_file(filepath: str, data_dict: dict, color_space: int = 1):
+    def _write_exr_file(filepath: str, data_dict: dict, color_space: int = 1, exr_source=None):
         """Write EXR file with multiple layers"""
 
         try:
@@ -503,6 +510,9 @@ class SequenceExportWorker(BaseExportWorker):
             
             # Enable ZIP compression
             header['compression'] = Imath.Compression(Imath.Compression.ZIP_COMPRESSION)
+            if exr_source:
+                from sammie.exr_media import export_header
+                export_header(header, exr_source)
             
             out = OpenEXR.OutputFile(filepath, header)
             

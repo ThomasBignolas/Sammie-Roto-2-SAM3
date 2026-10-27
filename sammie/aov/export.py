@@ -36,6 +36,9 @@ def write_exr(path, channels, metadata):
     from fractions import Fraction
     fps = Fraction(str(metadata['fps']))
     header['framesPerSecond'] = Imath.Rational(fps.numerator, fps.denominator)
+    if metadata.get('exr_source'):
+        from sammie.exr_media import export_header
+        export_header(header, metadata['exr_source'], metadata['fps'])
     temporary = str(path) + '.tmp'
     output = OpenEXR.OutputFile(temporary, header)
     try:
@@ -97,10 +100,18 @@ def export_sequence(job, progress=lambda done, total, message: None):
                     depth='Z and depth.Z: shot-normalized relative depth, 0 near / 1 far; Z_raw: model output',
                     normals='N.x/y/z: signed unit vectors; ' + settings.normal_axes,
                     passes={k: m for k, (_, m) in passes.items()})
+    from sammie.exr_media import project_info, project_rgb
+    exr_source = project_info(job['root'])
+    if exr_source:
+        metadata['exr_source'] = exr_source
+        if foreground and foreground.plate_path:
+            metadata['exr_source'] = dict(exr_source, options=dict(exr_source['options'],color_space=foreground.color_space))
     if job.get('include_plate', False):
         metadata['plate'] = 'R/G/B: original imported display-referred RGB, unpremultiplied, no color transform; not scene-linear'
         if foreground:
             metadata['plate'] = f'R/G/B: original CorridorKey input plate, straight {foreground.color_space}; no exposure change'
+        if exr_source and not (foreground and foreground.plate_path):
+            metadata['plate'] = f"R/G/B: original imported EXR {exr_source['options']['color_space']} RGB as stored, float HDR; proxy exposure is not applied"
     if mattes and job.get('include_mattes', False):
         metadata['alpha'] = mattes.metadata()
     if foreground:
@@ -124,6 +135,8 @@ def export_sequence(job, progress=lambda done, total, message: None):
         if job.get('include_plate', False):
             if foreground_source is not None:
                 rgb = foreground_source
+            elif exr_source:
+                rgb = project_rgb(job['root'], frame)
             else:
                 source = Path(job['root'])/'frames'/f"{frame:05d}.{job.get('extension', 'png')}"
                 rgb = cv2.imread(str(source), cv2.IMREAD_COLOR)

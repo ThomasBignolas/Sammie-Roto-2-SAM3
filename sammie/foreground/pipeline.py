@@ -17,10 +17,16 @@ from .versions import SOURCE, WEIGHTS
 def prepare(job, progress=lambda done,total,message: None):
     from sammie.aov.matte_layers import MatteLayers
     settings = ForegroundSettings.from_dict(job.get('foreground_settings', {})).validate()
-    imported = str(job.get('session',{}).get('video_file_path','')).lower()
-    if not settings.plate_path and imported.endswith(('.exr','.hdr')):
-        raise ValueError('For EXR/HDR footage, select the original EXR override and its actual color space, or import an sRGB display proxy before CorridorKey.')
     root = Path(job['root'])
+    from sammie.exr_media import project_info
+    info = project_info(root)
+    imported = str(job.get('session',{}).get('video_file_path','')).lower()
+    if not settings.plate_path:
+        expected_space = info['options']['color_space'] if info else 'srgb'
+        if settings.color_space != expected_space:
+            raise ValueError(f'The imported plate uses {expected_space}; select that CorridorKey plate color space.')
+        if not info and imported.endswith(('.exr','.hdr')):
+            raise ValueError('Reimport this EXR through File > Open, or choose an original EXR plate override and its actual color space.')
     first, last = int(job['first']), int(job['last'])
     if first < 0 or last < first:
         raise ValueError('Invalid CorridorKey frame range.')

@@ -19,7 +19,8 @@ def run_refinement(root, frame_range, settings, extension='png', progress=lambda
     session_file = root/'session_settings.conf'
     if session_file.exists():
         source_path = str(json.loads(session_file.read_text()).get('video_file_path', '')).lower()
-        if source_path.endswith(('.exr', '.hdr')):
+        from sammie.exr_media import project_info
+        if source_path.endswith(('.exr', '.hdr')) and not project_info(root):
             raise ValueError('Use a display-referred RGB proxy of linear EXR/HDR footage before ViTMatte refinement.')
     cache = RefinementCache(root)
     jobs = [(f, p) for f in frame_range for p in sorted((root/'matting'/f'{f:05d}').glob('*.png'))]

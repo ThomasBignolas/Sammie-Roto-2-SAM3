@@ -140,5 +140,9 @@ class ForegroundControls(QGroupBox):
             self.changed.emit()
 
     def clear_plate(self):
-        self.load(dict(asdict(self.settings()),plate_path='',plate_first=0,color_space='srgb'))
+        from sammie import core
+        from sammie.exr_media import project_info
+        info = project_info(core.temp_dir)
+        self.load(dict(asdict(self.settings()),plate_path='',plate_first=0,
+                       color_space=info['options']['color_space'] if info else 'srgb'))
         self.changed.emit()

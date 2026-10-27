@@ -1,12 +1,22 @@
 # Sammie-Roto 2 with SAM 3, ViTMatte and video AOVs
 
 **School build — easiest Windows installation:** download and extract
-[Sammie-Roto-School.zip from the release](https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3/releases/tag/school-2026.10.27),
+[Sammie-Roto-School.zip from the latest release](https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3/releases/latest),
 then run **`install_school.bat`**. It installs Python, dependencies and all supported
 models, including ViTMatte **Base (larger)**. Launch **`run_sam3.bat`** afterwards.
 Staff can share the source ZIP internally; recipients do not need GitHub access.
 SAM 3/3.1 require an approved Hugging Face account and a hidden local read-token
 login. [Full school setup, CMD options, updates and troubleshooting](docs/SCHOOL_INSTALL.md).
+
+**Update an installed copy:** close Sammie and run **`update_school.bat`**.
+For older installations, use the [one-line CMD updater](docs/SCHOOL_INSTALL.md#updating-and-moving-between-pcs).
+It downloads the latest published release and preserves cached models, settings
+and projects. Source edits are detected before replacement.
+
+**EXR input:** open or drop an EXR to import one image or its numbered sequence.
+Choose its RGB layer, input color space, preview/model exposure and frame rate.
+The original HDR plate is retained for EXR export; models receive aligned display
+RGB frames. [EXR workflow, color handling and executed tests](docs/EXR_IMPORT.md).
 
 **Local school build: CorridorKey foreground RGB.** Run `install_corridorkey.bat`, then launch `run_sam3.bat`. In **AOVs → CorridorKey Foreground RGB**, enable the optional pass, choose the alpha source and use **Test CorridorKey on current frame**. It uses the selected VideoMaMa/ViTMatte alpha as a hint, preserves that alpha exactly, and adds `foreground.R/G/B/A` to the multilayer EXR. Cleanup strength and despill can be adjusted from cache. [Setup, school PC transfer, presets, color handling and limitations](docs/CORRIDORKEY.md). CorridorKey's code and weights are downloaded separately into a local runtime; they are not bundled in this source build. Distributed through this school repository; see the school installer above.
 
@@ -36,7 +46,7 @@ Read the [Windows setup and workflow](docs/SAM3_WINDOWS.md), [architecture and c
 
 **Flickering interior holes:** the contact correction now completes narrow enclosed remnants along repaired seams. Optional **Matting → Postprocessing → Opaque core** holds opaque interiors solid with a feathered inset, shared by preview and EXR export. It is OFF by default and adjustable from cached mattes. See [settings and the frame 145/257 comparisons](docs/OPAQUE_CORE.md).
 
-**Validation status:** 148 automated tests pass. Real checkpoint CUDA tests have exercised SAM 2, SAM 3/3.1, matting, DVD v1.1, NormalCrafter and VDA Small on a 16 GB RTX 5060 Ti. SAM 3 / 3.1 tests include text/box detection, independent objects, bidirectional tracking, corrections, sequential MatAnyone refinement and full-resolution alpha exports. The actual MainWindow AOV workflow exports original RGB, existing VideoMaMa alpha, depth and normals in full-resolution multilayer EXRs. The new [CorridorKey validation](docs/CORRIDORKEY_VALIDATION.md) includes real GPU/UI/export runs using ViTMatte Base alpha and a CPU green-model smoke test. See the validation documents for measured results and limits; arbitrarily long shots and production-quality results are not guaranteed by these tests.
+**Validation status:** 165 automated tests pass, including EXR import/export and safe source updates. Real checkpoint CUDA tests have exercised SAM 2, SAM 3/3.1, matting, DVD v1.1, NormalCrafter and VDA Small on a 16 GB RTX 5060 Ti. SAM 3 / 3.1 tests include text/box detection, independent objects, bidirectional tracking, corrections, sequential MatAnyone refinement and full-resolution alpha exports. The actual MainWindow AOV workflow exports original RGB, existing VideoMaMa alpha, depth and normals in full-resolution multilayer EXRs. The new [CorridorKey validation](docs/CORRIDORKEY_VALIDATION.md) includes real GPU/UI/export runs using ViTMatte Base alpha and a CPU green-model smoke test. See the validation documents for measured results and limits; arbitrarily long shots and production-quality results are not guaranteed by these tests.
 
 Use `run_sam3.bat` for this version: the original upstream launcher/update mechanism targets upstream releases. The original project documentation follows.
 

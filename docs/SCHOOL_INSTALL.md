@@ -11,7 +11,7 @@ are included. The two small original upstream example clips are retained.
 Open a normal CMD window and paste:
 
 ```bat
-curl.exe -fL https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3/releases/download/school-2026.10.27/install_school_online.bat -o "%TEMP%\install-sammie.bat" && "%TEMP%\install-sammie.bat"
+curl.exe -fL https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3/releases/latest/download/install_school_online.bat -o "%TEMP%\install-sammie.bat" && "%TEMP%\install-sammie.bat"
 ```
 
 This downloads the release, verifies its ZIP SHA-256, extracts it into
@@ -26,7 +26,7 @@ and `-SkipSamCheckpoints` are also supported.
 ## ZIP installation
 
 1. Download **Sammie-Roto-School.zip** from the
-   [school release](https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3/releases/tag/school-2026.10.27),
+   [latest school release](https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3/releases/latest),
    or obtain that ZIP from your school administrator.
 2. Extract it to a **local writable folder**, for example `D:\Sammie-Roto-School`.
    Avoid Program Files, network shares and very long folder paths. Do not run
@@ -139,12 +139,41 @@ approval is still required for the gated SAM checkpoints.
 
 ## Updating and moving between PCs
 
-Use this repository's school releases. **Do not use the original upstream
-launcher/updater**, which targets the original Sammie build. Close Sammie before
-updating. For a Git installation on this branch, `git pull --ff-only` followed by
-`install_school.bat` updates source and reconciles dependencies. Never force-reset
-school modifications to update. For ZIP installs, extract the new ZIP into a new
-folder and install it; keep the old installation until you have verified your work.
+Close Sammie, then paste this **one line in CMD**:
+
+```bat
+curl.exe -fL https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3/releases/latest/download/update_school_online.bat -o "%TEMP%\update-sammie.bat" && "%TEMP%\update-sammie.bat"
+```
+
+Run it from the installed application folder, or from anywhere if you used the
+default `%LOCALAPPDATA%\SammieRoto\Sammie-Roto-School` location. For a custom
+location, append `-Directory "D:\Sammie-Roto-School"` to the final command.
+The online updater also supports the first `school-2026.10.27` ZIP installation,
+which did not include an update launcher. Updated installations can instead run
+**`update_school.bat`** directly. `-Plan` previews the destination without changing
+files; `-NoShortcut` preserves the current desktop shortcuts.
+
+The updater downloads the **latest published school release**, verifies the ZIP
+and per-file SHA-256 manifest, and updates packaged source only. It preserves
+downloaded models, environments, settings, active sessions and personal projects.
+It then reconciles the locked dependencies with `-Models OnDemand -NoLogin`, so
+existing model downloads are reused and no token prompt appears.
+
+For ZIP installations it keeps replaced source in
+`.runtime/update-backups/<id>/previous`. Local source edits or filename collisions
+stop the update before changes; resolve them or use a separate installation.
+Failed source replacements trigger rollback. If a locked file prevents rollback,
+the error identifies the files and backup to restore. A dependency-installation
+failure stops with an error; repair with `install_school.bat -Models OnDemand`.
+Completed source updates are repeatable. Downloaded ZIPs/backups can be removed
+after verifying an update if disk space is needed.
+
+For Git checkouts of this repository, the updater fetches the published commit
+and only performs a fast-forward; it never force-resets, switches branches or
+overwrites local commits. Uncommitted tracked changes or divergent/newer history
+stop the Git update. Use this school's launchers, not the original upstream
+updater, which targets a different build. A working internet connection is
+required for the online updater and dependency reconciliation.
 
 Share the **source ZIP**, not your live installation directory: virtual
 environments contain machine-specific paths, and runtime folders contain downloaded

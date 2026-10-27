@@ -17,7 +17,9 @@ BUNDLED_EXAMPLES = {'examples/example_bunny.mp4', 'examples/example_dance.mp4'}
 REQUIRED = ('install_school.bat', 'run_sam3.bat', 'uv.lock', 'scripts/install_school.ps1',
             'sammie/opaque_core.py', 'sammie/mask_contacts.py', 'sammie/matte_quality.py',
             'checkpoints/videomama/model_index.json', 'checkpoints/minimax/vae/config.json',
-            'docs/SCHOOL_INSTALL.md', 'LICENSE', BUNDLED_WEIGHT, *sorted(BUNDLED_EXAMPLES))
+            'docs/SCHOOL_INSTALL.md', 'LICENSE', BUNDLED_WEIGHT, *sorted(BUNDLED_EXAMPLES),
+            'sammie/exr_media.py', 'sammie/exr_import_ui.py', 'update_school.bat',
+            'scripts/update_school.py', 'scripts/update_school.ps1')
 
 
 def allowed(name):

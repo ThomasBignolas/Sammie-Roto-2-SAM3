@@ -28,8 +28,8 @@ class ForegroundSettings:
             raise ValueError('Invalid CorridorKey device or precision.')
         if self.color_space not in ('srgb', 'linear709', 'acescg'):
             raise ValueError('Select sRGB, linear Rec.709 or ACEScg input color.')
-        if not self.plate_path and self.color_space != 'srgb':
-            raise ValueError('Imported display frames use sRGB. Choose an original EXR plate for linear input.')
+        # Input color is checked against the actual project in prepare(): native
+        # EXR projects can supply linear RGB without an external plate override.
         if self.plate_path and not self.plate_path.lower().endswith('.exr'):
             raise ValueError('The original plate override must be the first numbered RGB EXR.')
         if self.plate_first < 0:

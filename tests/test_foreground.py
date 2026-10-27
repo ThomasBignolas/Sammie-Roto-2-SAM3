@@ -45,7 +45,7 @@ class ColorTests(unittest.TestCase):
 
     def test_invalid_settings(self):
         for changes in [dict(screen='auto'),dict(resolution=4096),dict(exposure_ev=float('nan')),
-                        dict(strength=-1),dict(despill=2),dict(color_space='acescg'),dict(plate_path='a.mp4')]:
+                        dict(strength=-1),dict(despill=2),dict(color_space='unknown'),dict(plate_path='a.mp4')]:
             with self.assertRaises(ValueError): replace(ForegroundSettings(),**changes).validate()
 
     def test_linear_despill_preserves_luminance(self):

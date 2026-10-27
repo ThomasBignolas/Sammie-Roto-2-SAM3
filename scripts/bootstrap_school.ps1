@@ -8,7 +8,7 @@ param(
     [switch]$Plan
 )
 $ErrorActionPreference = 'Stop'
-$Release = 'https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3/releases/download/school-2026.10.27'
+$Release = 'https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3/releases/latest/download'
 $Destination = [IO.Path]::GetFullPath($Destination)
 $AppRoot = Join-Path $Destination 'Sammie-Roto-School'
 Write-Host "School release: $Release"
@@ -25,7 +25,7 @@ try {
     $Marker = Join-Path $AppRoot '.runtime/school-package.sha256'
     if (Test-Path -LiteralPath $AppRoot) {
         if (-not (Test-Path -LiteralPath $Marker) -or (Get-Content -LiteralPath $Marker -Raw).Trim() -ne $Expected) {
-            throw "An existing installation is at $AppRoot. No files overwritten. Choose another -Destination, or run that folder's install_school.bat to repair it."
+            throw "An existing installation is at $AppRoot. No files overwritten. Use update_school_online.bat -Directory with this folder to update, or choose another -Destination for a fresh installation."
         }
         Write-Host 'Reusing this release in the existing folder; resuming dependency/model setup.'
     } else {
