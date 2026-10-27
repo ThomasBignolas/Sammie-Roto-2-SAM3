@@ -6,14 +6,7 @@ from tqdm import tqdm
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QProgressDialog, QApplication
 from sammie.settings_manager import get_settings_manager
-
-# Resolve absolute path of file back to project root folder
-utils_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(utils_dir, ".."))
-
-frames_dir = os.path.join(project_root, "temp", "frames")
-mask_dir = os.path.join(project_root, "temp", "masks")
-backup_dir = os.path.join(project_root, "temp", "masks_backup")
+from sammie import core
 
 # Use ORB comparison from opencv to compare two input frames/images for similarity
 def orb_comparison(img1, img2):
@@ -95,11 +88,12 @@ def restore_backup_mattes(mask_dir, backup_dir):
     shutil.copytree(backup_dir, mask_dir, dirs_exist_ok=True)
 
 def remove_backup_mattes():
-    if os.path.exists(backup_dir):
-        shutil.rmtree(backup_dir)
+    if os.path.exists(core.backup_dir):
+        shutil.rmtree(core.backup_dir)
 
 # Main function to replace similar (matted) frames with one single matte frame
 def replace_similar_matte_frames(parent_window, dedupe_min_threshold):
+    frames_dir, mask_dir, backup_dir = core.frames_dir, core.mask_dir, core.backup_dir
     settings_mgr = get_settings_manager()
 
     frame_numbers = []

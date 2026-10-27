@@ -11,7 +11,7 @@ import numpy as np
 from .algorithms import alpha_float
 from .model import digest
 
-VERSION = 1
+VERSION = 2  # Per-frame dependencies allow safe, bounded range repairs.
 
 
 def key(value):
@@ -101,9 +101,19 @@ class RefinementCache:
         atomic_arrays(p, **arrays)
         atomic_json(meta, {'signature': signature})
 
-    def publish(self, settings, entries, inputs, model, model_files=None):
+    def publish(self, settings, entries, inputs, model, model_files=None, dependencies=None):
+        dependencies = dependencies or {}
+        try:
+            previous = json.loads(self.active.read_text())
+            if (previous['version'] == VERSION and previous['settings'] == asdict(settings)
+                    and previous['model'] == model and dependencies):
+                entries = {**previous['entries'], **entries}
+                dependencies = {**previous.get('dependencies',{}), **dependencies}
+        except (OSError,ValueError,KeyError):
+            pass
         atomic_json(self.active, {'version': VERSION, 'settings': asdict(settings),
                                  'entries': entries, 'inputs': inputs, 'model': model,
+                                 'dependencies': dependencies,
                                  'model_files': model_files or {}})
 
     def selected(self, frame, oid, settings, stage):
@@ -114,9 +124,10 @@ class RefinementCache:
         """
         try:
             active = json.loads(self.active.read_text())
-            if active['version'] != VERSION or active['settings'] != asdict(settings):
+            if active['version'] not in (1, VERSION) or active['settings'] != asdict(settings):
                 return None
-            for p, data in active['inputs'].items():
+            dependencies = active.get('dependencies',{}).get(f'{frame}/{oid}', active['inputs'])
+            for p, data in dependencies.items():
                 current = stamp(self.root/p)
                 if isinstance(data, list):  # pre-release manifests
                     if current != data: return None

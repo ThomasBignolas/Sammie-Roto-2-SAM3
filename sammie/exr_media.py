@@ -169,6 +169,9 @@ def discard(stage):
 
 def commit(stage, target):
     stage, target = Path(stage).resolve(), Path(target).resolve()
+    from .projects import MARKER
+    if (target/MARKER).exists():
+        raise ValueError('Cannot import over a saved working project. Open a new session first.')
     if stage.parent != target.parent or not stage.name.startswith('.exr-import-') or target == target.parent:
         raise ValueError('Invalid EXR import staging location.')
     backup = target.parent / ('.exr-import-backup-' + uuid.uuid4().hex)

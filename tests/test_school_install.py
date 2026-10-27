@@ -98,7 +98,8 @@ class SchoolInstallTests(unittest.TestCase):
 
     def test_package_excludes_credentials_media_and_includes_configs(self):
         for name in ['.env', '.env.school', '.git/config', '.runtime/token', 'checkpoints/.cache/a.json',
-                     'AlphaTest.nk', 'checkpoints/sam3.pt', 'shot.sammie', 'token', 'stored_tokens']:
+                     'AlphaTest.nk', 'checkpoints/sam3.pt', 'shot.sammie', 'token', 'stored_tokens',
+                     'shot.sammieproj','shot.sammie-data/frames/00000.png','sammie.workspace.json','.sammie/queue.json']:
             self.assertFalse(allowed(name), name)
         for name in REQUIRED:
             self.assertTrue(allowed(name), name)

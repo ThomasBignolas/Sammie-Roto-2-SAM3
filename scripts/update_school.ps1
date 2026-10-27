@@ -1,5 +1,6 @@
 [CmdletBinding()]
-param([string]$Directory = '', [switch]$Plan, [switch]$NoShortcut)
+param([string]$Directory = '', [switch]$Plan, [switch]$NoShortcut,
+      [int]$WaitForPid = 0, [switch]$Restart)
 $ErrorActionPreference = 'Stop'
 if (-not $Directory) {
     if (Test-Path -LiteralPath (Join-Path $PWD 'run_sam3.bat')) { $Directory = $PWD.Path }
@@ -10,6 +11,11 @@ $Python = Join-Path $Root '.venv/Scripts/python.exe'
 if (-not (Test-Path -LiteralPath $Python)) { throw "No installed application at $Root. Specify -Directory with its actual folder." }
 Write-Host "Updating $Root. Close Sammie before running an update."
 if ($Plan) { Write-Host 'Plan only: download the latest verified source, preserve local data, then reconcile dependencies.'; return }
+if ($WaitForPid -gt 0) {
+    Write-Host "Waiting for Sammie process $WaitForPid to close..."
+    $WaitingProcess = Get-Process -Id $WaitForPid -ErrorAction SilentlyContinue
+    if ($WaitingProcess) { Wait-Process -Id $WaitForPid -ErrorAction SilentlyContinue }
+}
 $UpdateLock = $null
 $InstallLock = $null
 try {
@@ -35,6 +41,9 @@ try {
     & (Join-Path $Root 'scripts/install_school.ps1') @Options
     if ($LASTEXITCODE -ne 0) { throw 'Source updated, but dependencies need repair. Rerun install_school.bat -Models OnDemand.' }
     Write-Host 'Update complete. Launch run_sam3.bat.'
+    if ($Restart) {
+        Start-Process -FilePath $Python -ArgumentList 'sammie_main.py' -WorkingDirectory $Root -WindowStyle Hidden
+    }
 } catch {
     Write-Host ("UPDATE STOPPED: " + $_.Exception.Message) -ForegroundColor Red
     exit 1

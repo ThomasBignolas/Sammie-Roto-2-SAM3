@@ -159,9 +159,9 @@ class PipelineTests(unittest.TestCase):
         self.s = replace(self.s, strength=.5)
         self.assertEqual(self.run_pipeline()['cached_frames'], 0)
         cv2.imwrite(str(self.root/'matting/00001/0.png'), np.full((64, 96), 110, np.uint8))
-        self.assertEqual(self.run_pipeline()['cached_frames'], 1)  # temporal dependency chain
+        self.assertEqual(self.run_pipeline()['cached_frames'], 1)  # current + previous-frame dependencies
         cv2.imwrite(str(self.root/'frames/00000.png'), np.zeros((64, 96, 3), np.uint8))
-        self.assertEqual(self.run_pipeline()['cached_frames'], 0)
+        self.assertEqual(self.run_pipeline()['cached_frames'], 1)  # frame 2 does not depend on frame 0
 
     def test_cancel_resume_matches_uninterrupted_and_cleans_model(self):
         state = {'cancel': False}
@@ -275,7 +275,30 @@ class PipelineTests(unittest.TestCase):
         os.utime(path, (path.stat().st_atime+10, path.stat().st_mtime+10))
         np.testing.assert_array_equal(cache.selected(2, 0, self.s, 'validated'), original)
         cv2.imwrite(str(path), np.zeros((64,96,3),np.uint8))
+        np.testing.assert_array_equal(cache.selected(2, 0, self.s, 'validated'), original)
+        self.assertIsNone(cache.selected(1, 0, self.s, 'validated'))
+        cv2.imwrite(str(self.root/'frames/00001.png'), np.zeros((64,96,3),np.uint8))
         self.assertIsNone(cache.selected(2, 0, self.s, 'validated'))
+
+    def test_bounded_invalidation_matches_a_fresh_full_run(self):
+        self.run_pipeline()
+        cv2.imwrite(str(self.root/'matting/00000/0.png'),np.full((64,96),180,np.uint8))
+        self.run_pipeline()
+        warm=[]
+        for f in range(3):
+            with np.load(self.root/f'vitmatte/{f:05d}/0.npz') as data:warm.append(data['validated'].copy())
+        shutil.rmtree(self.root/'vitmatte')
+        self.run_pipeline()
+        for f in range(3):
+            with np.load(self.root/f'vitmatte/{f:05d}/0.npz') as data:
+                np.testing.assert_allclose(data['validated'],warm[f],atol=1e-7)
+
+    def test_partial_refinement_keeps_unaffected_frames_selectable(self):
+        self.run_pipeline()
+        before=RefinementCache(self.root).selected(0,0,self.s,'validated').copy()
+        run_refinement(self.root,range(1,3),self.s,model_factory=FakeModel,
+                       checkpoint_resolver=lambda *args:(Path('.'),'test-weight-v1'))
+        np.testing.assert_array_equal(RefinementCache(self.root).selected(0,0,self.s,'validated'),before)
 
     def test_corrupt_cache_is_recomputed_and_model_version_invalidates(self):
         self.run_pipeline()

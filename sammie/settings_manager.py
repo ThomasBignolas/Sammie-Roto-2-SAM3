@@ -77,6 +77,9 @@ class ApplicationSettings:
     export_include_original: bool = False
     export_multiple: bool = False
     export_folder_path: str = ""
+    last_working_project: str = ''
+    nuke_executable: str = ''
+    workspace_path: str = ''
 
 @dataclass  
 class SessionSettings:
@@ -273,8 +276,8 @@ class SettingsManager:
             from datetime import datetime
             self.session_settings.modified_timestamp = datetime.now().isoformat()
             
-            with open(self.session_settings_file, 'w') as f:
-                json.dump(asdict(self.session_settings), f, indent=2)
+            from sammie.projects import atomic_json
+            atomic_json(self.session_settings_file, asdict(self.session_settings))
             return True
         except Exception as e:
             print(f"Error saving session settings: {e}")
@@ -336,8 +339,8 @@ class SettingsManager:
         """Save points to session directory"""
         try:
             os.makedirs(self.temp_dir, exist_ok=True)
-            with open(self.points_file, 'w') as f:
-                json.dump(points_list, f, indent=2)
+            from sammie.projects import atomic_json
+            atomic_json(self.points_file, points_list)
             return True
         except Exception as e:
             print(f"Error saving points: {e}")

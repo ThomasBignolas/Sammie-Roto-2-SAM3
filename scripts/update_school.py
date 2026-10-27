@@ -31,7 +31,8 @@ def target_path(root, name):
     if ('\\' in name or ':' in name or p.is_absolute() or '..' in p.parts or
         not p.parts or PROTECTED.intersection(p.parts) or
         p.name.startswith('.env') or p.name in ('sammie_settings.conf','sammie_settings.json','token','stored_tokens','.git-credentials') or
-        p.suffix.lower() in ('.sammie','.nk','.exr') or
+        p.suffix.lower() in ('.sammie','.sammieproj','.nk','.exr') or
+        p.name == 'sammie.workspace.json' or any(part.endswith('.sammie-data') for part in p.parts) or
         (p.suffix.lower() in ('.pt','.pth','.safetensors','.bin') and name != 'checkpoints/1x_binary_mask_smooth.pth') or
         (p.parts[0] == 'checkpoints' and p.suffix != '.json' and name != 'checkpoints/1x_binary_mask_smooth.pth')):
         raise ValueError(f'Protected or unsafe update path: {name}')

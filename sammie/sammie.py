@@ -7,6 +7,7 @@ import shutil
 import re
 import glob
 import zipfile
+from pathlib import Path
 import threading
 import queue
 import multiprocessing
@@ -492,6 +493,9 @@ def remove_backup_mattes():
 
 def load_video(video_file, parent_window):
     """Load video and save frames as images using multi-threaded writers"""
+    from sammie.projects import MARKER
+    if (Path(core.temp_dir)/MARKER).exists():
+        raise ValueError('Detach the working project before importing new media.')
     if os.path.exists(core.temp_dir):
         shutil.rmtree(core.temp_dir)
     os.makedirs(core.frames_dir)
@@ -709,6 +713,9 @@ def load_image_sequence(image_path, parent_window):
     """
     Load an image or image sequence. Detects sequences automatically and prompts user.
     """
+    from sammie.projects import MARKER
+    if (Path(core.temp_dir)/MARKER).exists():
+        raise ValueError('Detach the working project before importing new media.')
     is_sequence, sequence_files, sequence_base_name = detect_image_sequence(image_path)
     files_to_load = [image_path]
 
@@ -842,6 +849,9 @@ def restore_video_info():
 
 
 def load_project(file_name, parent_window):
+    from sammie.projects import MARKER
+    if (Path(core.temp_dir)/MARKER).exists():
+        raise ValueError('Open portable projects through the project controller; this is a saved working folder.')
     if os.path.exists(core.temp_dir):
         shutil.rmtree(core.temp_dir)
     os.makedirs(core.temp_dir, exist_ok=True)

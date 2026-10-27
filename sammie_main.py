@@ -1169,6 +1169,8 @@ class MainWindow(QMainWindow):
         self.matany_manager = matting.create_matting_manager()
         self.removal_manager = removal.RemovalManager()
         self.point_manager = core.PointManager()
+        from sammie.project_ui import ProjectController
+        self.projects = ProjectController(self)
         self.highlighted_point = None
         
         # Store initial file to load after initialization
@@ -1207,6 +1209,11 @@ class MainWindow(QMainWindow):
 
     def _deferred_init(self):
         """Heavy initialization deferred until after the window is shown"""
+        try:
+            if not self.initial_file:
+                self.projects.restore()
+        except Exception as error:
+            self.update_status_bar(str(error))
         progress = QProgressDialog("Loading...", None, 0, 0, self)
         progress.setWindowTitle("Please Wait")
         progress.setModal(True)
@@ -1388,15 +1395,19 @@ class MainWindow(QMainWindow):
         # File menu
         self.file_menu = menubar.addMenu("File")
         file_actions = [
+            ("Set Project...", lambda: self._project_action(self.projects.set_workspace)),
             ("Load Video", self.open_file),
             ("Load Points", self.load_points),
             ("Load Project", self.load_project),
             (None, None),  # Separator
             ("Save Points", self.save_points),
             ("Save Project", self.save_project),
+            ("Save Working Project As...", self.save_working_project_as),
+            ("Pack Portable Project...", self.pack_project),
             (None, None),  # Separator
             ("Export Image", self.export_image),
             ("Export Video", self.export_video),
+            ("Send to Nuke...", self.send_to_nuke),
             (None, None),  # Separator
             ("Settings", self.show_settings),
             (None, None),  # Separator
@@ -1404,6 +1415,11 @@ class MainWindow(QMainWindow):
         ]
         
         self._add_menu_actions(self.file_menu, file_actions)
+        workflow_menu = menubar.addMenu('Workflow')
+        self._add_menu_actions(workflow_menu, [
+            ('Repair Selected Range...', self.repair_range),
+            ('Shot Queue...', self.show_shot_queue),
+        ])
         
         # View menu
         view_menu = menubar.addMenu("View")
@@ -1427,6 +1443,7 @@ class MainWindow(QMainWindow):
             ("Open Sammie-Roto Folder", self.open_folder),
             (None, None),  # Separator
             ("Changelog", self.show_changelog),
+            ("Check for School Updates...", self.check_school_updates),
             ("About", self.show_about)
         ]
         
@@ -1444,8 +1461,8 @@ class MainWindow(QMainWindow):
                     self.open_file: "Ctrl+O",
                     self.load_points: "Ctrl+L",
                     self.load_project: "Ctrl+Shift+L",
-                    self.save_points: "Ctrl+S",
-                    self.save_project: "Ctrl+Shift+S",
+                    self.save_project: "Ctrl+S",
+                    self.save_working_project_as: "Ctrl+Shift+S",
                     self.export_video: "Ctrl+E",
                     self.export_image: "Ctrl+Shift+E",
                     self.fit_to_screen: "Ctrl+Backspace",
@@ -2094,7 +2111,10 @@ class MainWindow(QMainWindow):
         self.settings_mgr.save_session_settings()
         
         self._save_window_and_splitter_settings()
+        if self.projects.descriptor:
+            self.projects.flush()
         self.sam_manager.unload_segmentation_model()
+        self.projects.release()
 
         # Clean up console redirect
         if hasattr(self, 'console_redirect'):
@@ -2977,8 +2997,8 @@ class MainWindow(QMainWindow):
         self._create_shortcut("Ctrl+O", self.open_file, "Load Video", create_shortcut=False)
         self._create_shortcut("Ctrl+L", self.load_points, "Load Points", create_shortcut=False)
         self._create_shortcut("Ctrl+Shift+L", self.load_project, "Load Project", create_shortcut=False)
-        self._create_shortcut("Ctrl+S", self.save_points, "Save Points", create_shortcut=False)
-        self._create_shortcut("Ctrl+Shift+S", self.save_project, "Save Project", create_shortcut=False)
+        self._create_shortcut("Ctrl+S", self.save_project, "Save Project", create_shortcut=False)
+        self._create_shortcut("Ctrl+Shift+S", self.save_working_project_as, "Save Working Project As", create_shortcut=False)
         self._create_shortcut("Ctrl+E", self.export_video, "Export Video", create_shortcut=False)
         self._create_shortcut("Ctrl+Shift+E", self.export_image, "Export Image", create_shortcut=False)
         
@@ -3053,7 +3073,7 @@ class MainWindow(QMainWindow):
         file_name, _ = QFileDialog.getOpenFileName(
             self, 
             "Open File", 
-            "", 
+            self.projects.location('footage'),
             "Media (*.mp4 *.m4v *.mkv *.mov *.avi *.webm *.png *.jpg *.jpeg *.bmp *.tiff *.gif *.webp *.exr)"
         )
         
@@ -3078,6 +3098,7 @@ class MainWindow(QMainWindow):
         
         # Check if file type is supported
         supported_extensions = [
+            '.sammie', '.sammieproj',
             '.mp4', '.m4v', '.mkv', '.mov', '.avi', '.webm',
             '.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.gif', '.webp', '.exr'
         ]
@@ -3094,18 +3115,21 @@ class MainWindow(QMainWindow):
     def load_file(self, file_path):
         """Load a file (consolidated method for both menu and command line usage)"""
         file_ext = os.path.splitext(file_path)[1].lower()
+        if file_ext in ('.sammie','.sammieproj'):
+            return self._project_action(lambda: self.projects.open(file_path))
         exr_import = None
         if file_ext == '.exr':
             # Prepare all pixels before discarding the previous session. Invalid
             # frames or Cancel leave the old project and its points untouched.
             try:
                 from sammie.exr_import_ui import prepare_dialog
-                exr_import = prepare_dialog(file_path, core.temp_dir, self)
+                exr_import = prepare_dialog(file_path, self.projects.scratch if self.projects.descriptor else core.temp_dir, self)
                 if exr_import is None:
                     return False
             except Exception as error:
                 show_message_dialog(self, title='EXR import', message=str(error), type='warning')
                 return False
+        self.projects.detach()
         # Clear all points and propagation data
         self.point_manager.clear_all()
         self.sam_manager.propagated = False
@@ -3290,37 +3314,41 @@ class MainWindow(QMainWindow):
                 print(f"Error loading points: {e}")
 
     def save_project(self):
-        """Save project to file"""
-        self.settings_mgr.save_session_settings()
+        return self._project_action(self.projects.save)
 
-        save_dialog = QFileDialog(self, "Save Project", "")
-        save_dialog.setAcceptMode(QFileDialog.AcceptSave)
-        save_dialog.setNameFilter("Sammie Files (*.sammie)")
-        save_dialog.setDefaultSuffix("sammie")
+    def _project_action(self, action):
+        try:
+            return action()
+        except InterruptedError as error:
+            self.update_status_bar(str(error))
+        except Exception as error:
+            show_message_dialog(self,title='Sammie workflow',message=str(error),type='warning')
+        return False
 
-        # Wait for the user to execute the save before continuing.
-        if save_dialog.exec_() == QDialog.Accepted:
-            file_name = save_dialog.selectedFiles()[0]
-            if file_name:
-                success = sammie.save_project(file_name, parent_window=self)
-                if success:
-                    print(f"Saved project to {file_name}")
-                else:
-                    print("Failed to save project")
+    def save_working_project_as(self):
+        return self._project_action(lambda: self.projects.save(save_as=True))
+
+    def pack_project(self):
+        return self._project_action(self.projects.pack)
+
+    def send_to_nuke(self):
+        from sammie.workflow.ui import send_to_nuke
+        return self._project_action(lambda: send_to_nuke(self))
+
+    def repair_range(self):
+        from sammie.workflow.ui import repair_range
+        return self._project_action(lambda: repair_range(self))
+
+    def show_shot_queue(self):
+        from sammie.workflow.ui import show_queue
+        return self._project_action(lambda: show_queue(self))
+
+    def check_school_updates(self):
+        from sammie.school_updates import UpdateDialog
+        return self._project_action(lambda: UpdateDialog(self).exec())
     
     def load_project(self):
-        """Load project from file"""
-        file_name, _ = QFileDialog.getOpenFileName(self, "Load Project", "", "Sammie Files (*.sammie)")
-        if file_name:
-            success = sammie.load_project(file_name, parent_window=self)
-            if success: 
-                print(f"Loaded project from {file_name}")
-                self.settings_mgr.load_session_settings()
-                self.resume_prev_session()
-                return
-            else:
-                print("Failed to load project")
-                return
+        return self._project_action(self.projects.open)
 
     def export_video(self):
         """Open export dialog"""

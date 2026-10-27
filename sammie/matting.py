@@ -132,7 +132,7 @@ class MattingManager(core.CallbackMixin):
         display_update_frequency throttle. Called when a processing run finishes,
         is cancelled, or errors out.
         """
-        if frame_number is None:
+        if frame_number is None or parent_window is None:
             return
         try:
             parent_window.frame_slider.setValue(frame_number)
@@ -291,7 +291,7 @@ class MatAnyManager(MattingManager):
         if combined and os.path.exists(core.matting_dir):
             for frame_dirname in os.listdir(core.matting_dir):
                 frame_dir = os.path.join(core.matting_dir, frame_dirname)
-                if os.path.isdir(frame_dir):
+                if os.path.isdir(frame_dir) and frame_dirname.isdecimal() and start_frame <= int(frame_dirname) <= end_frame:
                     for f in os.listdir(frame_dir):
                         if f != "0.png":
                             os.remove(os.path.join(frame_dir, f))
@@ -750,7 +750,7 @@ class VideoMaMaManager(MattingManager):
         if combined and os.path.exists(core.matting_dir):
             for frame_dirname in os.listdir(core.matting_dir):
                 frame_dir = os.path.join(core.matting_dir, frame_dirname)
-                if os.path.isdir(frame_dir):
+                if os.path.isdir(frame_dir) and frame_dirname.isdecimal() and start_frame <= int(frame_dirname) <= end_frame:
                     for f in os.listdir(frame_dir):
                         if f != "0.png":
                             os.remove(os.path.join(frame_dir, f))
@@ -945,8 +945,8 @@ class VideoMaMaManager(MattingManager):
  
         # Original frame dimensions for restoring output
         float_output = settings_mgr.get_session_setting('vitmatte_enabled', False)
-        from sammie.refinement.cache import save_base, RefinementCache
-        RefinementCache(core.temp_dir).invalidate()
+        from sammie.refinement.cache import save_base
+        # Refined frames validate their own input hashes. Keep unrelated ranges usable.
 
         def save_alpha(frame, alpha):
             filename = os.path.join(core.matting_dir, f'{frame:05d}', f'{object_id}.png')

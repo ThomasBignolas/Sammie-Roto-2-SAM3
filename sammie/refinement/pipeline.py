@@ -35,12 +35,12 @@ def run_refinement(root, frame_range, settings, extension='png', progress=lambda
     for frame in frames:
         if not (root/'frames'/f'{frame:05d}.{extension}').is_file():
             raise ValueError(f'Missing original RGB frame {frame}.')
-    cache.invalidate()
     progress(0, len(jobs), 'Checking ViTMatte checkpoint...')
     checkpoint, model_identity = checkpoint_resolver(settings, lambda t: progress(0, len(jobs), t), cancel)
     config_key = key([VERSION, asdict(settings), model_identity])
     model = model_factory(settings, checkpoint)
     validators, previous_keys, entries, inputs = {}, {}, {}, {}
+    previous_inputs, dependencies = {}, {}
     report = {'frames': [], 'cached_frames': 0, 'legacy_alpha_frames': 0,
               'model': model_identity, 'settings': asdict(settings), 'device': str(model.device)}
     if model.device.type == 'cuda':
@@ -64,11 +64,16 @@ def run_refinement(root, frame_range, settings, extension='png', progress=lambda
                 raise ValueError(f'Frame {frame}: source and matte dimensions differ.')
             if base_path == png:
                 report['legacy_alpha_frames'] += 1
-            for path in {source, png, base_path}:
-                inputs[path.relative_to(root).as_posix()] = {'stamp': stamp(path), 'sha256': digest(path)}
-            signature = key([config_key, frame, oid, digest(source), digest(png), digest(base_path),
-                             previous_keys.get(oid) if settings.temporal else None])
-            previous_keys[oid] = signature
+            current_inputs = {path.relative_to(root).as_posix(): {'stamp': stamp(path), 'sha256': digest(path)}
+                              for path in {source,png,base_path}}
+            inputs.update(current_inputs)
+            local_key = key([config_key, frame, oid, digest(source), digest(png), digest(base_path)])
+            signature = key([local_key, previous_keys.get(oid) if settings.temporal else None])
+            # TemporalValidator compares the current and previous raw refinement,
+            # without feeding its validated output back into subsequent frames.
+            dependencies[f'{frame}/{oid}'] = {**(previous_inputs.get(oid,{}) if settings.temporal else {}),**current_inputs}
+            previous_inputs[oid] = current_inputs
+            previous_keys[oid] = local_key
             result = cache.read(frame, oid, signature)
             validator = validators.setdefault(oid, TemporalValidator(settings.temporal_strength))
             if result is None:
@@ -105,7 +110,7 @@ def run_refinement(root, frame_range, settings, extension='png', progress=lambda
         check_cancel(cancel)
         files = [Path(checkpoint)/name for name in ('config.json', 'model.safetensors', 'pytorch_model.bin')]
         model_files = {str(p.resolve()): stamp(p) for p in files if p.is_file()}
-        cache.publish(settings, entries, inputs, model_identity, model_files)
+        cache.publish(settings, entries, inputs, model_identity, model_files, dependencies)
         report['seconds'] = time.perf_counter()-begin
         if model.device.type == 'cuda':
             report['peak_allocated_mib'] = torch.cuda.max_memory_allocated(model.device)/1048576

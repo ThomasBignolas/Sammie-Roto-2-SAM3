@@ -78,7 +78,8 @@ class SchoolUpdateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'checksum mismatch'):
             apply_archive(self.app,archive,'0'*64)
         for name in ('../outside.py','.git/config','.venv/keep.txt','checkpoints/sam3.pt',
-                     'temp/source_exr/00000.exr','shot.sammie','C:/outside.py','sammie_settings.conf'):
+                     'temp/source_exr/00000.exr','shot.sammie','C:/outside.py','sammie_settings.conf',
+                     'shot.sammieproj','shot.sammie-data/frames/00000.png','sammie.workspace.json'):
             with self.assertRaises(ValueError): target_path(self.app,name)
         archive,sha=self.archive(dict(self.base,**{'checkpoints/sam3.pt':b'bad'}))
         with self.assertRaises(ValueError): validate_archive(archive,sha)

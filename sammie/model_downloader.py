@@ -448,6 +448,12 @@ def ensure_models(
     needed = [s for s in specs if not s.already_downloaded()]
     if not needed:
         return True
+    if os.environ.get('SAMMIE_QUEUE_WORKER') == '1':
+        from scripts.setup_school_models import download
+        from huggingface_hub import get_token
+        for spec in needed:
+            download(spec, token=get_token())
+        return True
 
     dlg = ModelDownloadDialog(needed, parent=parent, title=title)
     accepted = dlg.exec() == QDialog.Accepted
@@ -573,4 +579,3 @@ if __name__ == "__main__":
             )
  
         spec.part_path.rename(spec.final_path)
- 

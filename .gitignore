@@ -3,6 +3,10 @@
 checkpoints/aov/
 checkpoints/vitmatte/
 *.sammie
+*.sammieproj
+*.sammie-data/
+sammie.workspace.json
+.sammie/
 .runtime/
 .test-output/
 checkpoints/sam3*.pt

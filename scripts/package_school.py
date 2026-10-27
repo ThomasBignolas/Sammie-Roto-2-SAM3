@@ -10,8 +10,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 PREFIX = 'Sammie-Roto-School/'
 FORBIDDEN = {'.git', '.runtime', '.research', '.uv', '.venv', '.test-output', '__pycache__',
-             'temp', 'dist', 'build', '.cache', '.codex', '.agents', '.env', '.ssh'}
-MEDIA = {'.sammie', '.nk', '.exr', '.pt', '.pth', '.safetensors', '.bin', '.mov', '.mp4', '.pyc', '.pfx', '.pem', '.key'}
+             'temp', 'dist', 'build', '.cache', '.codex', '.agents', '.env', '.ssh', '.workflow', '.sammie'}
+MEDIA = {'.sammie', '.sammieproj', '.nk', '.exr', '.pt', '.pth', '.safetensors', '.bin', '.mov', '.mp4', '.pyc', '.pfx', '.pem', '.key'}
 BUNDLED_WEIGHT = 'checkpoints/1x_binary_mask_smooth.pth'
 BUNDLED_EXAMPLES = {'examples/example_bunny.mp4', 'examples/example_dance.mp4'}
 REQUIRED = ('install_school.bat', 'run_sam3.bat', 'uv.lock', 'scripts/install_school.ps1',
@@ -19,12 +19,16 @@ REQUIRED = ('install_school.bat', 'run_sam3.bat', 'uv.lock', 'scripts/install_sc
             'checkpoints/videomama/model_index.json', 'checkpoints/minimax/vae/config.json',
             'docs/SCHOOL_INSTALL.md', 'LICENSE', BUNDLED_WEIGHT, *sorted(BUNDLED_EXAMPLES),
             'sammie/exr_media.py', 'sammie/exr_import_ui.py', 'update_school.bat',
-            'scripts/update_school.py', 'scripts/update_school.ps1')
+            'scripts/update_school.py', 'scripts/update_school.ps1', 'sammie/projects.py',
+            'sammie/project_ui.py', 'sammie/workflow/ui.py', 'sammie/workflow/worker.py',
+            'sammie/workflow/nuke.py', 'sammie/school_updates.py')
 
 
 def allowed(name):
     path = PurePosixPath(name)
     if path.is_absolute() or '..' in path.parts or FORBIDDEN.intersection(path.parts):
+        return False
+    if path.name == 'sammie.workspace.json' or any(p.endswith('.sammie-data') for p in path.parts):
         return False
     if path.name in ('sammie_settings.json', 'sammie_settings.conf', '.git-credentials', 'token', 'stored_tokens'):
         return False
