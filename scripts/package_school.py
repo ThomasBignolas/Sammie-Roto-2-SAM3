@@ -21,7 +21,10 @@ REQUIRED = ('install_school.bat', 'run_sam3.bat', 'uv.lock', 'scripts/install_sc
             'sammie/exr_media.py', 'sammie/exr_import_ui.py', 'update_school.bat',
             'scripts/update_school.py', 'scripts/update_school.ps1', 'sammie/projects.py',
             'sammie/project_ui.py', 'sammie/workflow/ui.py', 'sammie/workflow/worker.py',
-            'sammie/workflow/nuke.py', 'sammie/school_updates.py')
+            'sammie/workflow/nuke.py', 'sammie/school_updates.py',
+            'sammie/background_io.py', 'sammie/preview.py', 'sammie/preview_worker.py',
+            'sammie/ingest.py', 'sammie/performance.py', 'sammie/processes.py',
+            'sammie/backends/sam2_frames.py', 'docs/PERFORMANCE.md')
 
 
 def allowed(name):

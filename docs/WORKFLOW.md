@@ -3,6 +3,12 @@
 These features are in the school build. No additional Python dependencies are
 needed. Update with `update_school.bat`, then launch `run_sam3.bat`.
 
+Since 2.6.0, opening a project does not load SAM automatically. Click **Load Model**
+before editing/tracking, or enable automatic loading in Settings → General.
+Working Save As preserves prepared SAM 3 proxies, releases the old model session
+and leaves saved selections available. Copying/packing/unpacking now shows
+background progress. See [performance settings and validation](PERFORMANCE.md).
+
 ## Set Project, like a Maya workspace
 
 Choose **File → Set Project…** and select a folder for the production or exercise.

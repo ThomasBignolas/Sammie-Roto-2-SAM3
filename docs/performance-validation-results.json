@@ -1,0 +1,283 @@
+{
+  "host": {
+    "cpu": "Intel64 Family 6 Model 198 Stepping 2, GenuineIntel",
+    "logical_cores": 14,
+    "ram_gib": 63.43398666381836,
+    "threads": 4,
+    "platform": "Windows",
+    "gpu_testing": false
+  },
+  "native_render": {
+    "None": {
+      "before": {
+        "seconds": [
+          0.20259579992853105,
+          0.18891770020127296,
+          0.18874359992332757,
+          0.18560069985687733
+        ],
+        "hashes": [
+          "072302de4f27404cfa24e09f4ca4223c47f9e41227e9da8c83a9bb1ec3cd02c6",
+          "fc326a12f5a7e0e867bbc7f0142fbc92f64a453c508f0df8faaa5238da8a290f",
+          "072302de4f27404cfa24e09f4ca4223c47f9e41227e9da8c83a9bb1ec3cd02c6",
+          "fc326a12f5a7e0e867bbc7f0142fbc92f64a453c508f0df8faaa5238da8a290f"
+        ]
+      },
+      "after": {
+        "seconds": [
+          0.1907101001124829,
+          0.19070690008811653,
+          0.18496750015765429,
+          0.18939569988287985
+        ],
+        "hashes": [
+          "072302de4f27404cfa24e09f4ca4223c47f9e41227e9da8c83a9bb1ec3cd02c6",
+          "fc326a12f5a7e0e867bbc7f0142fbc92f64a453c508f0df8faaa5238da8a290f",
+          "072302de4f27404cfa24e09f4ca4223c47f9e41227e9da8c83a9bb1ec3cd02c6",
+          "fc326a12f5a7e0e867bbc7f0142fbc92f64a453c508f0df8faaa5238da8a290f"
+        ]
+      }
+    },
+    "Segmentation-Edit": {
+      "before": {
+        "seconds": [
+          0.9289359000977129,
+          0.7013707000296563,
+          0.9297683001495898,
+          0.7192424000240862
+        ],
+        "hashes": [
+          "c5540591ffab13b19e2e621e403e9f69713feac4a83adcff2db1228b69969741",
+          "1436a9d41138ce4b21d38d4f2d7d266c09a76eae73bebb597c29b2fcc2bc52a7",
+          "c5540591ffab13b19e2e621e403e9f69713feac4a83adcff2db1228b69969741",
+          "1436a9d41138ce4b21d38d4f2d7d266c09a76eae73bebb597c29b2fcc2bc52a7"
+        ]
+      },
+      "after": {
+        "seconds": [
+          0.5134289998095483,
+          0.5107118999585509,
+          0.5102315000258386,
+          0.5154149001464248
+        ],
+        "hashes": [
+          "c5540591ffab13b19e2e621e403e9f69713feac4a83adcff2db1228b69969741",
+          "1436a9d41138ce4b21d38d4f2d7d266c09a76eae73bebb597c29b2fcc2bc52a7",
+          "c5540591ffab13b19e2e621e403e9f69713feac4a83adcff2db1228b69969741",
+          "1436a9d41138ce4b21d38d4f2d7d266c09a76eae73bebb597c29b2fcc2bc52a7"
+        ]
+      }
+    },
+    "Segmentation-Matte": {
+      "before": {
+        "seconds": [
+          0.7977868001908064,
+          0.7082537999376655,
+          0.7132868999615312,
+          0.7408314000349492
+        ],
+        "hashes": [
+          "096e91b4b4ff839aa8bc17babe4143c2a7fbce1e730fe1973d6112ac20451b8f",
+          "d9a89ae78c14748eaecf418f8cbaaa5869ec171ee871b2dad726b0c32292b7cc",
+          "096e91b4b4ff839aa8bc17babe4143c2a7fbce1e730fe1973d6112ac20451b8f",
+          "d9a89ae78c14748eaecf418f8cbaaa5869ec171ee871b2dad726b0c32292b7cc"
+        ]
+      },
+      "after": {
+        "seconds": [
+          0.7443725999910384,
+          0.7338948999531567,
+          0.7454033000394702,
+          0.7929961001500487
+        ],
+        "hashes": [
+          "096e91b4b4ff839aa8bc17babe4143c2a7fbce1e730fe1973d6112ac20451b8f",
+          "d9a89ae78c14748eaecf418f8cbaaa5869ec171ee871b2dad726b0c32292b7cc",
+          "096e91b4b4ff839aa8bc17babe4143c2a7fbce1e730fe1973d6112ac20451b8f",
+          "d9a89ae78c14748eaecf418f8cbaaa5869ec171ee871b2dad726b0c32292b7cc"
+        ]
+      }
+    },
+    "Segmentation-BGcolor": {
+      "before": {
+        "seconds": [
+          1.1444461999926716,
+          1.1269227999728173,
+          1.1734533000271767,
+          1.1304977000690997
+        ],
+        "hashes": [
+          "1b1166dc2741b8f6f35d93c7a453916de9e6b4f858c740a7e8659b88b79a8f3b",
+          "9d9b5ba52bd9b98d41f234bc03d2ed212dddeadc9395dbed598da62e84073403",
+          "1b1166dc2741b8f6f35d93c7a453916de9e6b4f858c740a7e8659b88b79a8f3b",
+          "9d9b5ba52bd9b98d41f234bc03d2ed212dddeadc9395dbed598da62e84073403"
+        ]
+      },
+      "after": {
+        "seconds": [
+          1.0496531000826508,
+          1.1177462001796812,
+          1.0134242998901755,
+          1.024797399993986
+        ],
+        "hashes": [
+          "1b1166dc2741b8f6f35d93c7a453916de9e6b4f858c740a7e8659b88b79a8f3b",
+          "9d9b5ba52bd9b98d41f234bc03d2ed212dddeadc9395dbed598da62e84073403",
+          "1b1166dc2741b8f6f35d93c7a453916de9e6b4f858c740a7e8659b88b79a8f3b",
+          "9d9b5ba52bd9b98d41f234bc03d2ed212dddeadc9395dbed598da62e84073403"
+        ]
+      }
+    }
+  },
+  "native_preview": {
+    "resolution": [
+      4608,
+      3164
+    ],
+    "modes": {
+      "None": {
+        "seconds": [
+          1.3830228000879288,
+          0.35340049979276955,
+          0.07697529997676611,
+          0.07859839987941086,
+          0.07630379986949265,
+          0.08519940008409321
+        ],
+        "cache_hits": [
+          false,
+          false,
+          true,
+          true,
+          true,
+          true
+        ],
+        "median_seconds": 0.08189889998175204,
+        "cache_bytes": 131217408,
+        "largest_heartbeat_gap_seconds": 0.05400849995203316
+      },
+      "Segmentation-Edit": {
+        "seconds": [
+          0.5333577001001686,
+          0.47370980004779994,
+          0.079755499958992,
+          0.07863310002721846,
+          0.07875900017097592,
+          0.07568430015817285
+        ],
+        "cache_hits": [
+          false,
+          false,
+          true,
+          true,
+          true,
+          true
+        ],
+        "median_seconds": 0.07925725006498396,
+        "cache_bytes": 218695680,
+        "largest_heartbeat_gap_seconds": 0.04904960002750158
+      },
+      "Segmentation-Matte": {
+        "seconds": [
+          0.748684799997136,
+          0.7926019001752138,
+          0.08148399996571243,
+          0.07128109992481768,
+          0.07319730008020997,
+          0.07426919997669756
+        ],
+        "cache_hits": [
+          false,
+          false,
+          true,
+          true,
+          true,
+          true
+        ],
+        "median_seconds": 0.077876599971205,
+        "cache_bytes": 218695680,
+        "largest_heartbeat_gap_seconds": 0.05050400015898049
+      },
+      "Segmentation-BGcolor": {
+        "seconds": [
+          1.0081348000094295,
+          0.994397500064224,
+          0.07838489999994636,
+          0.07548419991508126,
+          0.07383619993925095,
+          0.07996250013820827
+        ],
+        "cache_hits": [
+          false,
+          false,
+          true,
+          true,
+          true,
+          true
+        ],
+        "median_seconds": 0.07917370006907731,
+        "cache_bytes": 218695680,
+        "largest_heartbeat_gap_seconds": 0.049527599941939116
+      },
+      "Matting-Matte": {
+        "skipped": "No matting outputs for these frames."
+      }
+    },
+    "worker_rss_mib": 790.4921875
+  },
+  "native_ingest": {
+    "before": {
+      "seconds": 0.667438100092113,
+      "count": 2,
+      "hashes": [
+        "fbc035091a6f9133548fdd7add27566075782404989db9d42f81980261bff505",
+        "aac04a34ae91e5fa1dcb89eaef6790a7544d1dccc777c2aa6ec42bcc8f2a17ed"
+      ],
+      "max_ui_gap": 0.3375643000472337,
+      "ticks": 2,
+      "disk_bytes": 28881577
+    },
+    "after": {
+      "seconds": 0.6217652999330312,
+      "count": 2,
+      "hashes": [
+        "fbc035091a6f9133548fdd7add27566075782404989db9d42f81980261bff505",
+        "aac04a34ae91e5fa1dcb89eaef6790a7544d1dccc777c2aa6ec42bcc8f2a17ed"
+      ],
+      "max_ui_gap": 0.011951099848374724,
+      "ticks": 62,
+      "disk_bytes": 28881577
+    }
+  },
+  "cpu_models": {
+    "sam2_load_and_prompt": {
+      "seconds": 10.838105299975723,
+      "success": true,
+      "heartbeat_ticks": 1075,
+      "max_gap": 0.059289899887517095
+    },
+    "sam2_forward": {
+      "seconds": 3.2911320999264717,
+      "success": true,
+      "heartbeat_ticks": 329,
+      "max_gap": 0.011423900024965405
+    },
+    "vitmatte_base": {
+      "seconds": 2.366769399959594,
+      "shape": [
+        216,
+        384
+      ],
+      "finite": true,
+      "minimum": 6.076212422101435e-09,
+      "maximum": 1.0,
+      "heartbeat_ticks": 218,
+      "max_gap": 0.09206359996460378
+    }
+  },
+  "date": "2026-10-28",
+  "gpu_validation": "Deferred at user request; no GPU inference tested for this update.",
+  "baseline_commit": "50ebbda6fb1cd03a5394e486b8edf0deffda01e7",
+  "tests": 211,
+  "note": "Diagnostics on two native frames, not long-shot throughput or matte-accuracy benchmarks. Worker RSS is a snapshot, not peak RAM."
+}

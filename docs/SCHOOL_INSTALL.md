@@ -47,6 +47,10 @@ and `-SkipSamCheckpoints` are also supported.
    must have its own authorized access; installing our code does not grant access.
 5. Launch **run_sam3.bat** or the **Sammie-Roto School** desktop shortcut.
 
+Version 2.6.0 opens projects for review without automatically loading SAM. Click
+**Load Model** to edit/track. No dependency/model reinstall is needed for the
+[performance update](PERFORMANCE.md); update the source and restart Sammie.
+
 Git, Python and pip do not have to be installed beforehand. The installer uses
 local tools and environments; it does not need administrator access or change
 system Python/PATH. It cannot install a GPU driver or bypass school IT policies.

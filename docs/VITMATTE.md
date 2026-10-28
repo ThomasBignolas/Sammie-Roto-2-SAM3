@@ -2,12 +2,31 @@
 
 ViTMatte refines the uncertain boundary of a VideoMaMa matte using the original RGB frame. It is an image model: it can improve fine edges on some shots and introduce errors on others. Keep the original available, compare in motion, and inspect the final composite. This feature does not replace segmentation, VideoMaMa or MatAnyone.
 
+## Editing settings without losing the result (2.6.0)
+
+ViTMatte controls now configure the **next run**. Changing strength, thresholds,
+resolution, model or other parameters keeps the last completed refinement selected
+for preview, EXR export, Send to Nuke and CorridorKey input. A status message marks
+unapplied settings; click **Refine cached mattes / Resume** to apply them. Temporarily
+invalid thresholds while editing no longer switch the display back to VideoMaMa.
+**Restore settings of completed result** recovers the values used to make that
+matte, including after saving/reopening. Mouse-wheel changes are disabled on the
+ViTMatte dropdowns and numeric fields to prevent accidental edits while scrolling.
+Use their buttons, keyboard or typed values instead.
+
+The enable checkbox and A/B/C selector remain immediate, intentional comparison
+controls. Changing the underlying RGB, VideoMaMa alpha or an applied custom
+checkpoint still invalidates affected results. Export metadata records applied
+ViTMatte settings separately from the controls' current values. No model rerun is
+needed merely to recover a result hidden by the old settings-mismatch behavior,
+provided its files and input dependencies still match.
+
 ## Windows installation and launch
 
-Use the private repository's `feature/vitmatte-refinement` branch. For a fresh workstation:
+Use the current public repository's `feature/aov-depth-normals` branch, or the [school installer](SCHOOL_INSTALL.md). For a manual installation:
 
 ```powershell
-git clone --branch feature/vitmatte-refinement https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3.git
+git clone --branch feature/aov-depth-normals https://github.com/ThomasBignolas/Sammie-Roto-2-SAM3.git
 cd Sammie-Roto-2-SAM3
 .\install_sam3.bat
 .\setup_models.bat
@@ -90,7 +109,7 @@ The worker holds only current arrays and small preceding flow/reference arrays p
 
 `temp/matting/` remains the original PNG matte cache. `temp/matting_float/` contains optional compressed original float alpha with hashes binding it to source/PNG content. `temp/vitmatte/` keeps one refinement variant per frame/object, with compressed refined/validated alpha and trimap. Signatures include source RGB, source alpha, PNG content, model weights/config, normalization/implementation version, settings, frame/object IDs and preceding temporal signature. Interrupted passes reuse completed matching frames and reconstruct temporal history before continuing. Changing ViTMatte settings never reruns VideoMaMa. Temporal-only changes currently rerun ViTMatte as well; the baseline remains cached.
 
-Only a completed manifest selects refinement for display/export. It validates input revisions; restored archive timestamps are accepted after content hashing. Changing a local checkpoint invalidates selection. Moving to a new workstation or checkpoint directory may require **Resume** to rebind the manifest. Repeated settings changes overwrite one cached variant rather than accumulating variants. Incompressible 4K float mattes can still be large: two float alpha planes alone are about 63 MiB/frame at 3840×2160 before compression, plus baseline/trimap. Save projects include these caches. **Clear Matting** removes all stages; source frames are retained.
+Only a completed manifest selects refinement for display/export. It validates input revisions; restored archive timestamps are accepted after content hashing. Changing a local checkpoint invalidates selection. Moving to a new workstation or checkpoint directory may require **Resume** to rebind the manifest. Starting a new refinement run overwrites one cached variant rather than accumulating variants. Editing controls alone does not overwrite or deselect the completed result. An interrupted replacement can leave affected frames unavailable until Resume finishes; the original VideoMaMa cache remains intact. Incompressible 4K float mattes can still be large: two float alpha planes alone are about 63 MiB/frame at 3840×2160 before compression, plus baseline/trimap. Save projects include these caches. **Clear Matting** removes all stages; source frames are retained.
 
 ## Reproducible checks
 
