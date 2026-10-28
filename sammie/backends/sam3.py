@@ -39,6 +39,8 @@ class Sam3Backend(TrackingMixin, core.CallbackMixin):
 
     def _status(self, text):
         print(text)
+        from sammie.background_io import report
+        report(text)
         self._notify('status', text=text)
 
     def load_segmentation_model(self, model=None, parent_window=None):
@@ -108,20 +110,28 @@ class Sam3Backend(TrackingMixin, core.CallbackMixin):
         destination.mkdir(parents=True, exist_ok=True)
         ratio = edge / max(core.VideoInfo.width, core.VideoInfo.height)
         size = (round(core.VideoInfo.width * ratio), round(core.VideoInfo.height * ratio))
-        for i, path in enumerate(paths):
-            target = destination / f'{i:05d}.png'
-            if not target.is_file():
+        missing = [(i, p) for i, p in enumerate(paths) if not (destination/f'{i:05d}.png').is_file()]
+        if not missing:
+            self._status(f'Reusing {len(paths)} prepared working frames')
+            return destination
+        from sammie.background_io import run_io
+        def prepare(progress, cancel):
+            for n, (i, path) in enumerate(missing):
+                if cancel(): raise InterruptedError('Working-frame preparation cancelled.')
                 image = cv2.imread(str(path))
-                if image is None:
-                    raise OSError(f'Could not decode {path}')
+                if image is None: raise OSError(f'Could not decode {path}')
                 image = cv2.resize(image, size, interpolation=cv2.INTER_AREA)
-                if not cv2.imwrite(str(target), image):
-                    raise OSError(f'Could not write {target}')
-            if i % 25 == 0:
-                self._status(f'Preparing working frames: {i+1}/{len(paths)}')
-                from PySide6.QtCore import QEventLoop
-                from PySide6.QtWidgets import QApplication
-                QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
+                target = destination/f'{i:05d}.png'
+                temporary = destination/f'{i:05d}.part.png'
+                try:
+                    if not cv2.imwrite(str(temporary), image):
+                        raise OSError(f'Could not write {target}')
+                    temporary.replace(target)
+                finally:
+                    temporary.unlink(missing_ok=True)
+                progress(n+1, len(missing), f'Preparing working frames: {n+1}/{len(missing)}')
+        run_io(None, 'Preparing SAM working frames', prepare)
+        self._status(f'Prepared {len(missing)} working frames; reused {len(paths)-len(missing)}')
         return destination
 
     def _request(self, request):
@@ -292,6 +302,9 @@ class Sam3Backend(TrackingMixin, core.CallbackMixin):
         for (frame, oid), points in sorted(groups.items()):
             # Replay each click to preserve official refinement semantics.
             for count in range(1, len(points)+1):
+                from sammie.background_io import check_cancelled, report
+                check_cancelled()
+                report(f'Restoring SAM 3 prompts: frame {frame+1}, object {oid}, click {count}/{len(points)}')
                 subset = points[:count]
                 self.segment_image(frame, oid, [[p['x'], p['y']] for p in subset],
                                    [int(p['positive']) for p in subset])

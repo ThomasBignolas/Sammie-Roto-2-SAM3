@@ -78,13 +78,14 @@ def read_project(path):
     return root, data
 
 
-def session_files(root):
+def session_files(root, include_proxies=False):
     root = Path(root).resolve()
+    excluded = EXCLUDED - {'sam3_proxy'} if include_proxies else EXCLUDED
     for base, dirs, files in os.walk(root):
-        dirs[:] = sorted(d for d in dirs if d not in EXCLUDED)
+        dirs[:] = sorted(d for d in dirs if d not in excluded)
         for name in sorted(files):
             path = Path(base)/name
-            if name in EXCLUDED or name.endswith(('.tmp','.part')):
+            if name in excluded or name.endswith(('.tmp','.part')):
                 continue
             if path.is_symlink() or not path.resolve().is_relative_to(root):
                 raise ValueError(f'Project contains an external link: {path}')
@@ -104,7 +105,7 @@ def create_project(source, descriptor, progress=lambda n,t,s: None, cancel=lambd
     stage = descriptor.parent/('.sammie-create-'+uuid.uuid4().hex)
     stage.mkdir()
     try:
-        files = list(session_files(source))
+        files = list(session_files(source, include_proxies=True))
         for i,(path, relative) in enumerate(files):
             if cancel(): raise InterruptedError('Project creation cancelled.')
             target = stage/relative

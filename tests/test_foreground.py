@@ -129,7 +129,8 @@ class PipelineTests(unittest.TestCase):
         cache.write(0,0,'example',refined=refined,validated=validated,trimap=np.full((19,31),128,np.uint8))
         cache.publish(RefinementSettings(),{'0/0':'example'},{},'test-double')
         for view,expected in [('original',base),('refined',refined),('validated',validated)]:
-            job=dict(self.job,last=0,session=dict(self.job['session'],vitmatte_enabled=True,vitmatte_view=view))
+            job=dict(self.job,last=0,session=dict(self.job['session'],vitmatte_enabled=True,vitmatte_view=view,
+                vitmatte_strength=.1,vitmatte_background=.99))  # Pending UI edits, not the completed result.
             self.generate(job)
             np.testing.assert_array_equal(self.calls[-1],expected)
             _,alpha,_,_=read_result(job,0,self.options)

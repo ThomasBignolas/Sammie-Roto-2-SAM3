@@ -48,6 +48,17 @@ def _digest_at_stamp(path, size, mtime_ns):
     return digest(path)
 
 
+@lru_cache(maxsize=8)
+def _json_at_stamp(path, size, mtime_ns, ctime_ns):
+    return json.loads(Path(path).read_text())
+
+
+def read_json(path):
+    path = Path(path)
+    stat = path.stat()
+    return _json_at_stamp(str(path.resolve()), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+
+
 def save_base(root, frame, object_id, alpha, source, png):
     """Cache unquantized VideoMaMa alpha, bound to both source and legacy PNG."""
     dest = Path(root)/'matting_float'/f'{frame:05d}'/f'{object_id}.npz'
@@ -59,8 +70,9 @@ def load_base(root, frame, object_id, source, png):
     dest = Path(root)/'matting_float'/f'{frame:05d}'/f'{object_id}.npz'
     meta = dest.with_suffix('.json')
     if dest.exists() and meta.exists():
-        data = json.loads(meta.read_text())
-        if data == {'png': digest(png), 'source': digest(source)}:
+        data = read_json(meta)
+        if data == {'png': _digest_at_stamp(str(png), *stamp(png)),
+                    'source': _digest_at_stamp(str(source), *stamp(source))}:
             with np.load(dest, allow_pickle=False) as a:
                 return alpha_float(a['alpha']), dest
     a = cv2.imread(str(png), cv2.IMREAD_UNCHANGED)
@@ -78,19 +90,31 @@ class RefinementCache:
     def invalidate(self):
         self.active.unlink(missing_ok=True)
 
+    def applied_settings(self):
+        """Settings of the completed result, independent of edited UI values."""
+        from .algorithms import RefinementSettings
+        try:
+            active = read_json(self.active)
+            if active['version'] not in (1, VERSION):
+                return None
+            return RefinementSettings(**active['settings']).validate()
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
     def paths(self, frame, oid):
         p = self.path/f'{frame:05d}'/f'{oid}.npz'
         return p, p.with_suffix('.json')
 
-    def read(self, frame, oid, signature):
+    def read(self, frame, oid, signature, stage=None):
         p, meta = self.paths(frame, oid)
         try:
-            if json.loads(meta.read_text())['signature'] != signature:
+            if read_json(meta)['signature'] != signature:
                 return None
             with np.load(p, allow_pickle=False) as a:
-                result = {k: a[k] for k in ('refined', 'validated', 'trimap')}
+                keys = ('refined', 'validated', 'trimap') if stage is None else tuple(dict.fromkeys((stage, 'trimap')))
+                result = {k: a[k] for k in keys}
                 if any(result[k].shape != result['trimap'].shape or not np.isfinite(result[k]).all()
-                       for k in ('refined', 'validated')):
+                       for k in keys):
                     return None
                 return result
         except (OSError, ValueError, KeyError, BadZipFile, EOFError):
@@ -123,7 +147,7 @@ class RefinementCache:
         frames if an earlier source matte changes. Content hashes govern resume.
         """
         try:
-            active = json.loads(self.active.read_text())
+            active = read_json(self.active)
             if active['version'] not in (1, VERSION) or active['settings'] != asdict(settings):
                 return None
             dependencies = active.get('dependencies',{}).get(f'{frame}/{oid}', active['inputs'])
@@ -143,7 +167,7 @@ class RefinementCache:
             entry = active['entries'].get(f'{frame}/{oid}')
             if entry is None:
                 return None
-            a = self.read(frame, oid, entry)
+            a = self.read(frame, oid, entry, stage=stage)
             return a[stage] if a is not None else None
         except (OSError, ValueError, KeyError):
             return None

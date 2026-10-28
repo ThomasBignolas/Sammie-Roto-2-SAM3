@@ -128,9 +128,12 @@ class RemovalManager(core.CallbackMixin):
         blank_image = np.zeros((core.VideoInfo.height, core.VideoInfo.width, 1), dtype=np.uint8)
         blank_image = self.resize_image_minimax(blank_image, mask=True)
         resized_h, resized_w = blank_image.shape[:2]
+        from .performance import require_host_memory
+        require_host_memory((frames_to_process+5)*resized_h*resized_w*16*3, 'MiniMax-Remover')
 
         # Create progress dialog
-        progress_dialog = QProgressDialog("Loading MiniMax-Remover model...", "Cancel", 0, 0, parent_window)
+        from .background_io import progress_dialog as make_progress
+        progress_dialog = make_progress("Loading MiniMax-Remover model...", "Cancel", 0, 0, parent_window)
         progress_dialog.setWindowTitle("Object Removal Progress")
         progress_dialog.setWindowModality(Qt.ApplicationModal)
         progress_dialog.show()
@@ -257,6 +260,10 @@ class RemovalManager(core.CallbackMixin):
         masks = []
 
         for frame_number in range(start_frame, end_frame + 1):
+            from .background_io import check_cancelled, report
+            check_cancelled()
+            report(f'Loading MiniMax frames and masks: {frame_number-start_frame+1}/{end_frame-start_frame+1}',
+                   frame_number-start_frame+1, end_frame-start_frame+1)
             frame_path = os.path.join(core.frames_dir, f"{frame_number:05d}.{extension}")
 
             # Load frame
@@ -434,8 +441,14 @@ class RemovalManager(core.CallbackMixin):
         frames = []
         masks = []
         total = end_frame - start_frame + 1
+        from .performance import require_host_memory
+        probe = self.resize_image_propainterx(np.zeros((core.VideoInfo.height,core.VideoInfo.width),np.uint8),mask=True)
+        require_host_memory(total*probe.shape[0]*probe.shape[1]*4*3, 'ProPainterX')
+        del probe
 
         for i, frame_number in enumerate(range(start_frame, end_frame + 1)):
+            from .background_io import check_cancelled
+            check_cancelled()
             if on_progress is not None:
                 on_progress(i, total)
 
@@ -496,7 +509,8 @@ class RemovalManager(core.CallbackMixin):
         device = core.DeviceManager.get_device()
         extension = core.get_frame_extension()
 
-        progress_dialog = QProgressDialog("Loading ProPainterX model...", "Cancel", 0, 0, parent_window)
+        from .background_io import progress_dialog as make_progress
+        progress_dialog = make_progress("Loading ProPainterX model...", "Cancel", 0, 0, parent_window)
         progress_dialog.setWindowTitle("Object Removal Progress")
         progress_dialog.setWindowModality(Qt.ApplicationModal)
         progress_dialog.setAutoClose(False)

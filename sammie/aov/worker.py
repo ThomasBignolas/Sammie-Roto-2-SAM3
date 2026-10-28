@@ -8,6 +8,9 @@ from .cache import atomic_json
 
 
 def main():
+    import torch
+    from sammie.performance import configure_cpu
+    configure_cpu(torch_module=torch)
     parser = argparse.ArgumentParser()
     parser.add_argument('request')
     args = parser.parse_args()

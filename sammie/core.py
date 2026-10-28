@@ -66,6 +66,8 @@ class DeviceManager:
 
         settings_mgr = get_settings_manager()
         force_cpu = settings_mgr.get_app_setting("force_cpu", 0)
+        from .performance import configure_cpu
+        configure_cpu(settings_mgr.get_app_setting('cpu_threads', 0), torch)
 
         if torch.cuda.is_available():
             cls._device = torch.device("cuda")
@@ -605,7 +607,11 @@ def compute_mask_bounding_box(frame_range, object_ids, combine_ids=None, buffer=
     frame_w = VideoInfo.width
     frame_h = VideoInfo.height
 
-    for frame_num in frame_range:
+    from .background_io import report, check_cancelled
+    total = len(frame_range) if hasattr(frame_range, '__len__') else 0
+    for index, frame_num in enumerate(frame_range):
+        check_cancelled()
+        report(f'Finding matting region: scanning frame {frame_num}', index, total)
         # Build the union mask for this frame across all relevant object IDs
         union_mask = None
         for oid in ids_to_scan:
@@ -615,7 +621,7 @@ def compute_mask_bounding_box(frame_range, object_ids, combine_ids=None, buffer=
             m = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
             if m is None:
                 continue
-            union_mask = m if union_mask is None else np.maximum(union_mask, m)
+            union_mask = m if union_mask is None else np.maximum(union_mask, m, out=union_mask)
 
         if union_mask is None or not np.any(union_mask):
             continue
@@ -630,12 +636,10 @@ def compute_mask_bounding_box(frame_range, object_ids, combine_ids=None, buffer=
             frame_h = h
 
         # Find non-black pixel extents for this frame
-        rows = np.any(union_mask > 0, axis=1)
-        cols = np.any(union_mask > 0, axis=0)
-        y1 = int(np.argmax(rows))
-        y2 = int(len(rows) - 1 - np.argmax(rows[::-1]))
-        x1 = int(np.argmax(cols))
-        x2 = int(len(cols) - 1 - np.argmax(cols[::-1]))
+        x1, y1, width, height = cv2.boundingRect(union_mask)
+        if not width or not height:
+            continue  # Erosion/postprocessing can remove a small source mask.
+        x2, y2 = x1 + width - 1, y1 + height - 1
 
         global_x1 = x1 if global_x1 is None else min(global_x1, x1)
         global_y1 = y1 if global_y1 is None else min(global_y1, y1)

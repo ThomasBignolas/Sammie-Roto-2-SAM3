@@ -102,6 +102,8 @@ class QueueDialog(QDialog):
         self.bar=QProgressBar();layout.addWidget(self.bar)
         self.label=QLabel('Each shot needs saved object selections. Models run sequentially; close other GPU-heavy apps for large shots.')
         self.label.setWordWrap(True);layout.addWidget(self.label)
+        from sammie.background_io import add_activity_status
+        add_activity_status(self,layout,self.label)
         self.close_button=QPushButton('Close');self.close_button.clicked.connect(self.reject);layout.addWidget(self.close_button)
         self.refresh()
 
@@ -245,6 +247,7 @@ def queue_store(window):
 
 def run_dialog(window,store,start=False,auto_close=False):
     if window.is_playing:window.toggle_play_pause()
+    if hasattr(window,'preview'):window.preview.close()
     window.projects.flush()
     window.sam_manager.unload_segmentation_model()
     window.matany_manager.unload_matting_model()

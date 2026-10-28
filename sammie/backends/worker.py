@@ -29,6 +29,8 @@ class Sam3Engine:
 
     def load(self, version, checkpoint):
         import torch
+        from sammie.performance import configure_cpu
+        configure_cpu(torch_module=torch)
         if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
             raise RuntimeError('Official SAM 3 video requires an NVIDIA CUDA GPU with BF16 support.')
         if not Path(checkpoint).is_file():

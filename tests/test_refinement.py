@@ -328,6 +328,11 @@ class PipelineTests(unittest.TestCase):
         a = sammie.update_image(0, opts, points, return_numpy=True)
         self.assertEqual(a.dtype, np.float32)
         self.assertFalse(np.all(a*255 == np.round(a*255)))
+        # Draft edits, including temporarily crossed thresholds, must not change
+        # either the preview or exported float alpha until refinement is rerun.
+        self.manager.set_session_setting('vitmatte_strength', .1)
+        self.manager.set_session_setting('vitmatte_background', .99)
+        np.testing.assert_array_equal(sammie.update_image(0, opts, points, return_numpy=True), a)
         self.manager.set_session_setting('sequence_start_frame', 1001)
         output = self.root/'export'; output.mkdir()
         settings = ExportSettings('exr', str(output), 'test', 'Matting-Matte', -1, False, 14, False, None, None)
@@ -339,6 +344,47 @@ class PipelineTests(unittest.TestCase):
             f.close()
         np.testing.assert_array_equal(exr, a[..., 0])
         self.assertEqual(len(list(output.glob('*.exr'))), 3)
+
+    def test_draft_settings_keep_completed_result_but_source_changes_invalidate(self):
+        from sammie.refinement.display import selected_alpha
+        self.run_pipeline()
+        self.manager.set_session_setting('matany_model','VideoMaMa')
+        self.manager.set_session_setting('vitmatte_enabled',True)
+        points=[{'object_id':0}]
+        original=selected_alpha(0,points).copy()
+        for key,value in [('radius',25),('short_edge',720),('model','small-composition-1k'),
+                          ('temporal',False),('strength',.1),('background',.99)]:
+            self.manager.set_session_setting('vitmatte_'+key,value)
+            np.testing.assert_array_equal(selected_alpha(0,points),original)
+        self.assertEqual(RefinementCache(self.root).applied_settings(),self.s)
+        self.manager.save_session_settings();self.manager.load_session_settings()
+        np.testing.assert_array_equal(selected_alpha(0,points),original)
+        self.manager.set_session_setting('vitmatte_view','original')
+        np.testing.assert_allclose(selected_alpha(0,points),120/255,atol=1e-7)
+        self.manager.set_session_setting('vitmatte_view','validated')
+        cv2.imwrite(str(self.root/'matting/00000/0.png'),np.zeros((64,96),np.uint8))
+        self.assertFalse(selected_alpha(0,points).any())
+
+    def test_ui_draft_restore_and_wheel_does_not_change_controls(self):
+        from sammie.refinement.ui import RefinementControls
+        from PySide6.QtCore import QPointF,QPoint,Qt
+        from PySide6.QtGui import QWheelEvent
+        self.run_pipeline()
+        model=QComboBox();model.addItems(['VideoMaMa'])
+        controls=RefinementControls(model);controls.setChecked(True)
+        try:
+            controls.controls['radius'].setValue(35)
+            self.assertIn('last completed refinement',controls.status.text())
+            controls.restore.click()
+            self.assertEqual(RefinementSettings.from_session(self.manager),self.s)
+            for widget in (controls.controls['radius'],controls.controls['strength'],controls.controls['model'],controls.view,controls.preset):
+                before=widget.currentIndex() if isinstance(widget,QComboBox) else widget.value()
+                widget.setFocus()
+                event=QWheelEvent(QPointF(10,10),QPointF(10,10),QPoint(),QPoint(0,120),Qt.NoButton,Qt.NoModifier,Qt.NoScrollPhase,False)
+                QApplication.sendEvent(widget,event)
+                after=widget.currentIndex() if isinstance(widget,QComboBox) else widget.value()
+                self.assertEqual(after,before)
+        finally:controls.close()
 
     def test_multiple_object_refinement_and_single_object_combined_setting(self):
         from sammie.refinement.display import selected_alpha

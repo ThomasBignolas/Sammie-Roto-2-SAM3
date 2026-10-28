@@ -1,7 +1,7 @@
 """Optional controls and a cancellable refinement worker in the existing Matting tab."""
 from dataclasses import asdict
 import threading
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, QEvent, Qt
 from PySide6.QtWidgets import (QGroupBox, QFormLayout, QVBoxLayout, QCheckBox,
     QComboBox, QDoubleSpinBox, QSpinBox, QPushButton, QLabel, QLineEdit, QFileDialog,
     QDialog, QProgressBar)
@@ -82,6 +82,9 @@ class RefinementControls(QGroupBox):
         form.addRow('Preview / export:', self.view)
         self.run = QPushButton('Refine cached mattes / Resume')
         form.addRow(self.run)
+        self.restore = QPushButton('Restore settings of completed result')
+        self.restore.clicked.connect(self.restore_applied)
+        form.addRow(self.restore)
         self.status = QLabel('Optional. Original mattes remain available. Model loads after VideoMaMa unloads.')
         self.status.setWordWrap(True)
         form.addRow(self.status)
@@ -92,7 +95,45 @@ class RefinementControls(QGroupBox):
         self.preset.activated.connect(self.apply_preset)
         model_combo.currentTextChanged.connect(lambda v: self.setVisible(v == 'VideoMaMa'))
         self.setVisible(model_combo.currentText() == 'VideoMaMa')
+        for widget in (*self.controls.values(), self.preset, self.view):
+            if isinstance(widget, (QComboBox, QSpinBox, QDoubleSpinBox)):
+                widget.setFocusPolicy(Qt.StrongFocus)
+                widget.installEventFilter(self)
         self.load()
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Wheel and isinstance(watched, (QComboBox, QSpinBox, QDoubleSpinBox)):
+            # Scrolling the sidebar must never silently change refinement values.
+            event.ignore()
+            return True
+        return super().eventFilter(watched, event)
+
+    def refresh_status(self):
+        from .cache import RefinementCache
+        applied = RefinementCache(core.temp_dir).applied_settings()
+        self.restore.setEnabled(applied is not None)
+        if applied is None:
+            self.status.setText('No completed refinement. Run Refine cached mattes / Resume to create one.')
+            return
+        try:
+            pending = RefinementSettings.from_session(get_settings_manager()) != applied
+        except ValueError:
+            pending = True
+        if pending:
+            self.status.setText('Settings changed — preview and export keep the last completed refinement. Click Refine / Resume to apply, or restore its settings.')
+        else:
+            self.status.setText('Using completed refinement where source mattes still match. A/B/C selects the preview and export result.')
+
+    def restore_applied(self):
+        from .cache import RefinementCache
+        applied = RefinementCache(core.temp_dir).applied_settings()
+        if applied is None:
+            return
+        manager = get_settings_manager()
+        for key, value in asdict(applied).items():
+            manager.set_session_setting('vitmatte_'+key, value)
+        self.load()
+        self.save()
 
     def browse(self):
         path = QFileDialog.getExistingDirectory(self, 'Choose ViTMatte Transformers checkpoint directory')
@@ -112,12 +153,12 @@ class RefinementControls(QGroupBox):
             else: widget.setValue(value)
         self.view.setCurrentIndex(self.view.findData(manager.get_session_setting('vitmatte_view', 'validated')))
         self._loading = False
+        self.refresh_status()
 
     def save(self, *_):
         if self._loading:
             return
         manager = get_settings_manager()
-        before = {k: manager.get_session_setting('vitmatte_'+k) for k in self.controls}
         manager.set_session_setting('vitmatte_enabled', self.isChecked())
         manager.set_session_setting('vitmatte_view', self.view.currentData())
         for k, widget in self.controls.items():
@@ -126,8 +167,7 @@ class RefinementControls(QGroupBox):
             elif isinstance(widget, QLineEdit): value = widget.text().strip()
             else: value = widget.value()
             manager.set_session_setting('vitmatte_'+k, value)
-        if before != {k: manager.get_session_setting('vitmatte_'+k) for k in self.controls}:
-            self.status.setText('Changed settings require Refine / Resume. Stale or incomplete results show original mattes.')
+        self.refresh_status()
         manager.save_session_settings()
         self.changed.emit()
 
@@ -151,6 +191,9 @@ class RefinementWorker(QThread):
 
     def run(self):
         try:
+            import torch
+            from sammie.performance import configure_cpu
+            configure_cpu(torch_module=torch)
             self.result.emit(run_refinement(*self.args, progress=self.progress.emit, cancel=self.cancelled.is_set))
         except Exception as e:
             self.error.emit(str(e))
@@ -167,6 +210,8 @@ class RefinementDialog(QDialog):
         self.bar = QProgressBar()
         self.button = QPushButton('Cancel')
         for w in (self.label, self.bar, self.button): layout.addWidget(w)
+        from sammie.background_io import add_activity_status
+        add_activity_status(self, layout, self.label)
         start, end, _ = core.get_frame_range()
         self.worker = RefinementWorker(core.temp_dir, range(start, end+1), settings, core.get_frame_extension())
         self.report, self.failure = None, None

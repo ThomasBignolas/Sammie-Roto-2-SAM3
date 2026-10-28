@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import (
     QAction, QShortcut, QKeySequence, QTextCursor, QIcon, QPixmap, QFont, QDesktopServices
 )
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 
 # Import external logic functions
 from sammie import sammie
@@ -39,7 +39,7 @@ from sammie.gui_widgets import (
 
 # ==================== VERSION ====================
 
-__version__ = "2.5.0"
+__version__ = "2.6.0"
 
 # ==================== LOGGING HELPER ====================
 
@@ -1156,10 +1156,20 @@ class Sidebar(QWidget):
 
 class MainWindow(QMainWindow):
     """Main application window"""
+    segmentation_event = Signal(str, object)
+    processing_frame = Signal(int)
 
     def __init__(self, initial_file=None):
         super().__init__()
         self.settings_mgr = initialize_settings()
+        from sammie.performance import configure_cpu
+        configure_cpu(self.settings_mgr.get_app_setting('cpu_threads', 0))
+        from sammie.preview import PreviewController
+        self.preview = PreviewController(self)
+        self.preview.ready.connect(self._preview_ready)
+        self.preview.failed.connect(self._preview_failed)
+        self._displayed_frame = None
+        self._preview_reset_zoom = False
         self.setWindowTitle(f"Sammie-Roto {__version__}")
         self.setWindowIcon(QIcon(":/icon.ico"))
         self.is_playing = False
@@ -1178,7 +1188,8 @@ class MainWindow(QMainWindow):
 
         # Connect callbacks for both managers
         self.point_manager.add_callback(self._on_points_changed)
-        self.sam_manager.add_callback(self._on_segmentation_changed)
+        self.segmentation_event.connect(self._dispatch_segmentation_event)
+        self.sam_manager.add_callback(lambda action, **kw: self.segmentation_event.emit(action, kw))
         
         # Initialize update checker
         self.update_checker = UpdateChecker()
@@ -1191,6 +1202,7 @@ class MainWindow(QMainWindow):
         # Initialize UI
         self._init_ui()
         self._connect_signals()
+        self.processing_frame.connect(self.frame_slider.setValue)
         self.sidebar.aov_tab.generate_requested.connect(self.run_aovs)
         self.sidebar.aov_tab.export_requested.connect(self.export_aovs)
         self.sidebar.aov_tab.preview_requested.connect(self.preview_aovs)
@@ -1219,12 +1231,6 @@ class MainWindow(QMainWindow):
         progress.setModal(True)
         progress.show()
         QApplication.processEvents()
-        core.DeviceManager.setup_device()
-        try:
-            self.sam_manager.load_segmentation_model(parent_window=self)
-        except Exception as error:
-            self.update_status_bar(str(error))
-            print(error)
         QApplication.processEvents()
         # Load file or resume session
         if self.initial_file:
@@ -1612,6 +1618,7 @@ class MainWindow(QMainWindow):
         
         # Console
         self.console = QTextEdit()
+        self.console.document().setMaximumBlockCount(3000)
         self.console.setReadOnly(True)
         console_layout.addWidget(self.console)
         
@@ -1845,6 +1852,15 @@ class MainWindow(QMainWindow):
         self.status = QLabel("Ready")
         self.statusBar = QStatusBar()
         self.statusBar.addWidget(self.status)
+        self.preview_status = QLabel()
+        self.statusBar.addPermanentWidget(self.preview_status)
+        self.preview.status.connect(self.preview_status.setText)
+        self.memory_status = QLabel()
+        self.statusBar.addPermanentWidget(self.memory_status)
+        self.memory_timer = QTimer(self)
+        from sammie.performance import available_memory
+        self.memory_timer.timeout.connect(lambda: self.memory_status.setText(f'RAM free: {available_memory()/1024**3:.1f} GiB'))
+        self.memory_timer.start(2000)
         self.setStatusBar(self.statusBar)
 
     def _setup_console_redirect(self):
@@ -1889,10 +1905,7 @@ class MainWindow(QMainWindow):
             self.point_table.set_current_frame(current_frame)
             self._refresh_table()
         
-        view_options = self.get_view_options()
-        updated_image = sammie.update_image(current_frame, view_options, self.point_manager.points)
-        if updated_image:
-            self.viewer.update_image(updated_image)
+        self._request_preview(current_frame)
     
     def on_tab_changed(self, index):
         """Handle tab changes and automatically switch views"""
@@ -2080,12 +2093,44 @@ class MainWindow(QMainWindow):
         if core.VideoInfo.total_frames == 0:
             return  # Don't try to update before video is loaded
         current_frame = self.frame_slider.value()
+        self.preview.invalidate()
+        if preview_mask is None:
+            self._request_preview(current_frame)
+            return
         view_options = self.get_view_options()
         preview_object_id = self.sidebar.segmentation_tab.get_selected_object_id() if preview_mask is not None else None
         updated_image = sammie.update_image(current_frame, view_options, self.point_manager.points, preview_mask=preview_mask, preview_object_id=preview_object_id)
         if updated_image:
             self.viewer.update_image(updated_image)
             
+    def _request_preview(self, frame, reset_zoom=False):
+        if core.VideoInfo.total_frames < 1:
+            return
+        self._preview_reset_zoom |= reset_zoom
+        self._displayed_frame = None
+        self.viewer.point_editing_enabled = False
+        self.preview.request(frame, self.get_view_options(), self.point_manager.points, self.settings_mgr)
+
+    def _preview_ready(self, frame, pixmap):
+        if frame != self.frame_slider.value():
+            return
+        if not pixmap.isNull():
+            if self._preview_reset_zoom:
+                self.viewer.load_image_reset_zoom(pixmap)
+                self._preview_reset_zoom = False
+            else:
+                self.viewer.update_image(pixmap)
+        else:
+            self.viewer.clear_image()
+        self._displayed_frame = frame
+        self._update_point_editing_state()
+
+    def _preview_failed(self, message):
+        self._displayed_frame = None
+        self.viewer.point_editing_enabled = False
+        self.update_status_bar(message)
+        print(message)
+
     def _refresh_table(self):
         """Rebuild table from point manager data"""
         settings_mgr = self.settings_mgr
@@ -2095,6 +2140,7 @@ class MainWindow(QMainWindow):
         # Update current_frame in point table
         self.point_table.set_current_frame(current_frame)
         
+        self.point_table.setUpdatesEnabled(False)
         self.point_table.clear_points()
         for point in self.point_manager.points:
             # If show_all_points is disabled, only add points for current frame
@@ -2102,9 +2148,11 @@ class MainWindow(QMainWindow):
                 self.point_table.add_point(point['frame'], point['object_id'], point['positive'], point['x'], point['y'], point.get('kind'))
             elif show_all_points:
                 self.point_table.add_point(point['frame'], point['object_id'], point['positive'], point['x'], point['y'], point.get('kind'))
+        self.point_table.setUpdatesEnabled(True)
 
     def closeEvent(self, event):
         """Clean up on close"""
+        self.preview.close()
         # Save current session state
         self._save_current_ui_state()
         self.settings_mgr.save_points(self.point_manager.get_all_points())
@@ -2160,7 +2208,9 @@ class MainWindow(QMainWindow):
         
         # Run segmentation (this will trigger segmentation callback and update image)
         try:
-            self.sam_manager.segment_image(frame, object_id, coordinates, labels)
+            from sammie.background_io import run_compute
+            run_compute(self, f'Segmenting frame {frame}', lambda progress, cancel:
+                        self.sam_manager.segment_image(frame, object_id, coordinates, labels))
         except Exception:
             self.point_manager.points.pop()
             self.settings_mgr.save_points(self.point_manager.points)
@@ -2168,7 +2218,7 @@ class MainWindow(QMainWindow):
             raise
     
     def on_preview_requested(self, x, y, is_positive):
-        if (not self.sam_manager.supports_preview or
+        if (getattr(self, '_compute_busy', False) or not self.sam_manager.supports_preview or
                 self.segmentation_tab.sam_model_combo.currentText() != self.sam_manager.loaded_model_name):
             return
         frame = self.frame_slider.value()
@@ -2194,10 +2244,20 @@ class MainWindow(QMainWindow):
             return
         
         print(f"Replaying {len(self.point_manager.points)} points...")
-        self.sam_manager.replay_points(self.point_manager.get_all_points())
+        self._replay_saved_points()
         
         # Update display after replay
         self._update_current_frame_display()
+
+    def _replay_saved_points(self):
+        from sammie.background_io import run_compute
+        points = self.point_manager.get_all_points()
+        try:
+            return run_compute(self, f'Restoring {len(points)} prompts',
+                lambda progress, cancel: self.sam_manager.replay_points(points))
+        except InterruptedError:
+            self.sam_manager.unload_segmentation_model()
+            raise
     
     def undo_last_point(self):
         """Remove last point"""
@@ -2288,30 +2348,46 @@ class MainWindow(QMainWindow):
     
     @segmentation_action
     def load_segmentation_model(self):
-        """Load a new SAM model"""
         model = self.segmentation_tab.sam_model_combo.currentText()
-        if model == self.sam_manager.loaded_model_name and not self.sam_manager.supports_text:
-            print("Model is already loaded")
+        if model == self.sam_manager.loaded_model_name and self.sam_manager.predictor is not None and not self.sam_manager.supports_text:
+            print('Model is already loaded')
             return
+        self._load_model_responsive(model)
 
-        progress = QProgressDialog("Loading...", None, 0, 0, self)
-        progress.setWindowTitle("Please Wait")
-        progress.setModal(True)
-        progress.show()
-        QApplication.processEvents()
-
-        try:
-            if model not in ('SAM 3', 'SAM 3.1') and any(p.get('kind') == 'sam3_seed' for p in self.point_manager.points):
+    def _load_model_responsive(self, model):
+        from sammie.background_io import run_compute
+        from sammie.model_downloader import ensure_models
+        if model not in ('SAM 3', 'SAM 3.1'):
+            if any(p.get('kind') == 'sam3_seed' for p in self.point_manager.points):
                 raise ValueError('Clear SAM 3 text/box selections before switching to SAM 2. Save the project first if needed.')
-            if self.sam_manager.load_segmentation_model(model, parent_window=self):
-                self.sam_manager.initialize_predictor()
-                self.sam_manager.replay_points(self.point_manager.get_all_points())
-                settings_mgr = get_settings_manager()
-                settings_mgr.set_session_setting("sam_model", model)
-                settings_mgr.set_app_setting("default_sam_model", model)
+            if not ensure_models(model, parent=self):
+                return False
+        self.preview.close()
+        points = self.point_manager.get_all_points()
+        def load(progress, cancel):
+            try:
+                progress(0, 0, f'Loading {model} checkpoint and allocating model memory')
+                if not self.sam_manager.load_segmentation_model(model):
+                    return False
+                if core.VideoInfo.total_frames:
+                    progress(0, 0, f'{model}: initializing video session')
+                    self.sam_manager.initialize_predictor()
+                    progress(0, 0, f'{model}: restoring {len(points)} saved prompts')
+                    self.sam_manager.replay_points(points)
+                if cancel(): raise InterruptedError('Model loading cancelled.')
+                return True
+            except BaseException:
+                self.sam_manager.unload_segmentation_model()
+                raise
+        try:
+            loaded = run_compute(self, f'Loading {model}', load)
+            if loaded:
+                self.settings_mgr.set_session_setting('sam_model', model)
+                self.settings_mgr.set_app_setting('default_sam_model', model)
                 self.update_status_bar(f'{model} ready')
+            return loaded
         finally:
-            progress.close()
+            self._update_current_frame_display()
 
     @segmentation_action
     def find_sam3_objects(self, checked=False, box=None):
@@ -2321,20 +2397,17 @@ class MainWindow(QMainWindow):
             raise RuntimeError('Load an image or video first.')
         controls = self.segmentation_tab.sam3_controls
         frame = self.frame_slider.value()
-        progress = QProgressDialog('Finding objects...', None, 0, 0, self)
-        progress.setWindowModality(Qt.WindowModal)
-        progress.show()
-        QApplication.processEvents()
-        try:
-            masks = self.sam_manager.discover(frame, text=controls.text.text(), box=box)
-        finally:
-            progress.close()
+        from sammie.background_io import run_compute
+        text = controls.text.text()
+        masks = run_compute(self, 'Finding objects', lambda progress, cancel:
+                            self.sam_manager.discover(frame, text=text, box=box))
         if not masks:
             controls.status.setText('No matching objects found. Existing selections were kept. Try a different description or box.')
             return
         selected = select_candidates(self, masks, frame, self.sam_manager.candidate_labels,
                                      remaining=16-len(self.sam_manager.id_map))
-        records = self.sam_manager.accept_candidates(selected)
+        records = run_compute(self, 'Registering selected objects', lambda progress, cancel:
+                              self.sam_manager.accept_candidates(selected)) if selected else []
         for record in records:
             self.point_manager.points.append(record)
             self.point_manager._notify('add', point=record)
@@ -2353,9 +2426,9 @@ class MainWindow(QMainWindow):
         if count > 0:
             self.sam_manager.deduplicated = False
             self.update_deduplicate_status()
-            self.sam_manager.replay_points(self.point_manager.get_all_points())
+            self._replay_saved_points()
             if self.sam_manager.track_objects(parent_window=self) == 0: # if cancelled
-                self.sam_manager.replay_points(self.point_manager.get_all_points())
+                self._replay_saved_points()
             else: # completed
                 pass
             sammie.remove_backup_mattes() # Make sure to remove an existing mattes backup folder
@@ -2375,10 +2448,10 @@ class MainWindow(QMainWindow):
         if count > 0:
             self.sam_manager.deduplicated = False
             self.update_deduplicate_status()
-            self.sam_manager.replay_points(self.point_manager.get_all_points())
+            self._replay_saved_points()
             current_frame = self.frame_slider.value()
             if self.sam_manager.track_forward(parent_window=self, current_frame=current_frame) == 0: # if cancelled
-                self.sam_manager.replay_points(self.point_manager.get_all_points())
+                self._replay_saved_points()
             sammie.remove_backup_mattes() # Make sure to remove an existing mattes backup folder
             self.update_tracking_status()
             self._update_current_frame_display()
@@ -2395,10 +2468,10 @@ class MainWindow(QMainWindow):
         if count > 0:
             self.sam_manager.deduplicated = False
             self.update_deduplicate_status()
-            self.sam_manager.replay_points(self.point_manager.get_all_points())
+            self._replay_saved_points()
             current_frame = self.frame_slider.value()
             if self.sam_manager.track_backward(parent_window=self, current_frame=current_frame) == 0: # if cancelled
-                self.sam_manager.replay_points(self.point_manager.get_all_points())
+                self._replay_saved_points()
             sammie.remove_backup_mattes() # Make sure to remove an existing mattes backup folder
             self.update_tracking_status()
             self._update_current_frame_display()
@@ -2456,7 +2529,7 @@ class MainWindow(QMainWindow):
         self.update_removal_status()
         # Replay points to rebuild masks if there are any points
         if self.point_manager.points:
-            self.sam_manager.replay_points(self.point_manager.get_all_points())
+            self._replay_saved_points()
         else:
             # If no points, just update display
             self._update_current_frame_display()
@@ -2509,48 +2582,52 @@ class MainWindow(QMainWindow):
         self.settings_mgr.set_app_setting("default_matany_overlap", self.settings_mgr.get_session_setting("matany_overlap", 2))
         self.settings_mgr.set_app_setting("default_matany_chunk", self.settings_mgr.get_session_setting("matany_chunk", 16))
 
-        if count > 0:  
-            #load models
-            print(f"Loading {matting_model} model...")
-            progress = QProgressDialog("Loading...", None, 0, 0, self)
-            progress.setWindowTitle("Please Wait")
-            progress.setModal(True)
-            progress.show()
-            QApplication.processEvents()
-            self.sam_manager.offload_model_to_cpu()
-            QApplication.processEvents()
+        if not count:
+            print('Points must be added on the Segmentation tab before matting')
+            return
+        from sammie.background_io import run_compute
+        from sammie.model_downloader import ensure_models
+        from types import SimpleNamespace
+        keys = ['videomama', 'svd_vae'] if matting_model == 'VideoMaMa' else ('matanyone2' if matting_model == 'MatAnyone2' else 'matanyone')
+        if not ensure_models(keys, parent=self): return
+        self.preview.close()
+        if self.is_playing: self.toggle_play_pause()
+        self.matany_manager = matting.create_matting_manager()
+        # The legacy managers only need setValue; relay it to Qt's main thread.
+        relay = SimpleNamespace(frame_slider=SimpleNamespace(setValue=self.processing_frame.emit))
+        def process(progress, cancel):
             try:
-                if self.matany_manager.BACKEND != matting_model: # if the existing matting manager backend is wrong, create a new one
-                    self.matany_manager = matting.create_matting_manager()
-                if not self.matany_manager.load_matting_model(parent_window=self): # load matting model
-                    print(f"Failed to load { matting_model} model")
-                    return
-                QApplication.processEvents()
-                progress.close()
-                success = self.matany_manager.run_matting(self.point_manager.points, parent_window=self, combined=combined)
-                if success and matting_model == 'VideoMaMa' and self.settings_mgr.get_session_setting('vitmatte_enabled', False):
-                    self.matany_manager.unload_matting_model()
-                    self.run_vitmatte(manage_models=False)
-            except Exception as e:
-                if "out of memory" in str(e):
-                    show_message_dialog(self, title="Error", message="An out of memory error occurred. Please try again with lower settings." , type="warning")
-                else: 
-                    print(f"An error occurred: {e}")
+                progress(0, 0, 'Releasing segmentation GPU resources')
+                self.sam_manager.offload_model_to_cpu()
+                progress(0, 0, f'Loading {matting_model} checkpoint')
+                if not self.matany_manager.load_matting_model():
+                    raise RuntimeError(f'Could not load {matting_model}; see the console for details.')
+                if cancel(): return False
+                progress(0, 0, f'{matting_model}: preparing source frames and masks')
+                return self.matany_manager.run_matting(self.point_manager.points, relay, combined=combined)
             finally:
-                self.update_matting_status()
-                self._update_current_frame_display()
-                progress = QProgressDialog("Loading...", None, 0, 0, self)
-                progress.setWindowTitle("Please Wait")
-                progress.setModal(True)
-                progress.show()
-                QApplication.processEvents()
-                self.settings_mgr.save_session_settings()
+                progress(0, 0, f'Releasing {matting_model} GPU resources')
                 self.matany_manager.unload_matting_model()
-                QApplication.processEvents()
-                self.sam_manager.load_model_to_device()
-                progress.close()
-        else:
-            print("Points must be added on the Segmentation tab before matting")
+        try:
+            success = run_compute(self, matting_model, process)
+            if success and matting_model == 'VideoMaMa' and self.settings_mgr.get_session_setting('vitmatte_enabled', False):
+                self.run_vitmatte(manage_models=False)
+        except InterruptedError as error:
+            self.update_status_bar(str(error))
+        except Exception as error:
+            show_message_dialog(self, title='Matting failed', message=str(error), type='warning')
+        finally:
+            # Keep SAM offloaded throughout optional ViTMatte refinement.
+            # Restoring it between stages wastes time and can exhaust VRAM.
+            try:
+                run_compute(self, 'Restoring segmentation model', lambda progress, cancel:
+                    self.sam_manager.load_model_to_device())
+            except Exception as error:
+                self.sam_manager.unload_segmentation_model()
+                show_message_dialog(self, title='Model restore failed', message=str(error), type='warning')
+            self.update_matting_status()
+            self._update_current_frame_display()
+            self.settings_mgr.save_session_settings()
 
     def inspect_matte_quality(self):
         from sammie.matte_quality import load_inspection
@@ -2568,6 +2645,7 @@ class MainWindow(QMainWindow):
         """Refine cached VideoMaMa results without rerunning segmentation or matting."""
         from sammie.refinement.algorithms import RefinementSettings
         from sammie.refinement.ui import RefinementDialog
+        from sammie.background_io import run_compute
         if self.settings_mgr.get_session_setting('matany_model') != 'VideoMaMa':
             return
         try:
@@ -2576,14 +2654,16 @@ class MainWindow(QMainWindow):
             if source_path.endswith(('.exr', '.hdr')) and not project_info(core.temp_dir):
                 raise ValueError('ViTMatte needs display-referred RGB. Export an sRGB/Rec.709 PNG or video proxy of linear EXR/HDR footage, then import that proxy for matting. Alpha export remains linear.')
             settings = RefinementSettings.from_session(self.settings_mgr)
+            self.preview.close()
             if manage_models:
-                self.sam_manager.offload_model_to_cpu()
-                self.matany_manager.unload_matting_model()
+                run_compute(self, 'Releasing models before ViTMatte', lambda progress, cancel:
+                    (self.sam_manager.offload_model_to_cpu(), self.matany_manager.unload_matting_model()))
             dialog = RefinementDialog(self, settings)
             report, failure = dialog.execute()
             if failure:
                 show_message_dialog(self, title='ViTMatte refinement', message=failure, type='warning')
             elif report:
+                self.matting_tab.refinement.refresh_status()
                 peak = report.get('peak_allocated_mib')
                 message = f"Finished {len(report['frames'])} object frames in {report['seconds']:.1f}s."
                 if peak is not None:
@@ -2595,8 +2675,11 @@ class MainWindow(QMainWindow):
             show_message_dialog(self, title='ViTMatte refinement', message=str(e), type='warning')
         finally:
             if manage_models:
-                self.sam_manager.load_model_to_device()
+                run_compute(self, 'Restoring segmentation model', lambda progress, cancel: self.sam_manager.load_model_to_device())
             self._update_current_frame_display()
+
+    def _dispatch_segmentation_event(self, action, kwargs):
+        self._on_segmentation_changed(action, **kwargs)
 
     def preview_aovs(self, label):
         target = {'Depth': 'AOV-Depth', 'Normals': 'AOV-Normals', 'Original plate': 'None',
@@ -2607,6 +2690,7 @@ class MainWindow(QMainWindow):
     def run_aovs(self, foreground_only=False, current_only=False):
         from dataclasses import asdict
         from sammie.aov.ui import AOVDialog
+        from sammie.background_io import run_compute
         tab = self.sidebar.aov_tab
         offloaded = False
         try:
@@ -2621,11 +2705,14 @@ class MainWindow(QMainWindow):
                 raise ValueError('AOV models need display-referred RGB. Import an sRGB/Rec.709 proxy of this linear EXR/HDR plate.')
             if self.is_playing:
                 self.toggle_play_pause()
-            self.sam_manager.offload_model_to_cpu()
+            self.preview.close()
+            def release(progress, cancel):
+                self.sam_manager.offload_model_to_cpu()
+                self.matany_manager.unload_matting_model()
+                self.removal_manager.unload_minimax_model()
+                self.removal_manager.unload_propainterx_model()
+            run_compute(self, 'Releasing models before AOV generation', release)
             offloaded = True
-            self.matany_manager.unload_matting_model()
-            self.removal_manager.unload_minimax_model()
-            self.removal_manager.unload_propainterx_model()
             job = tab.make_job()
             job.update(points=self.point_manager.points, session=asdict(self.settings_mgr.session_settings))
             if current_only:
@@ -2661,7 +2748,7 @@ class MainWindow(QMainWindow):
             show_message_dialog(self, title='AOV generation', message=str(error), type='warning')
         finally:
             if offloaded:
-                self.sam_manager.load_model_to_device()
+                run_compute(self, 'Restoring segmentation model', lambda progress, cancel: self.sam_manager.load_model_to_device())
             self._update_current_frame_display()
 
     def export_aovs(self):
@@ -2698,48 +2785,31 @@ class MainWindow(QMainWindow):
         self.settings_mgr.set_app_setting("default_minimax_vae_tiling", self.settings_mgr.get_session_setting("minimax_vae_tiling", False))
         self.settings_mgr.set_app_setting("default_minimax_steps", self.settings_mgr.get_session_setting("minimax_steps", 6))
         
-        if self.removal_tab.method_combo.currentText() == 'MiniMax-Remover':
+        from sammie.background_io import run_compute
+        from sammie.model_downloader import ensure_models
+        minimax = self.removal_tab.method_combo.currentText() == 'MiniMax-Remover'
+        keys = ['minimax_transformer', 'minimax_vae'] if minimax else ['propainter', 'flow_completion', 'memfof']
+        if not ensure_models(keys, parent=self): return
+        self.preview.close()
+        if self.is_playing: self.toggle_play_pause()
+        def process(progress, cancel):
             try:
-                # offload sam model
+                progress(0, 0, 'Releasing segmentation GPU resources')
                 self.sam_manager.offload_model_to_cpu()
-                QApplication.processEvents()
-                self.removal_manager.run_object_removal_minimax(self.point_manager.points, parent_window=self)
-            except Exception as e:
-                if "out of memory" in str(e):
-                    show_message_dialog(self, title="Error", message="An out of memory error occurred. Please try again with lower settings." , type="warning")
-                else: 
-                    print(f"An error occurred: {e}")
+                method = self.removal_manager.run_object_removal_minimax if minimax else self.removal_manager.run_object_removal_propainterx
+                return method(self.point_manager.points)
             finally:
-                progress = QProgressDialog("Loading...", None, 0, 0, self)
-                progress.setWindowTitle("Please Wait")
-                progress.setModal(True)
-                progress.show()
-                QApplication.processEvents()
+                progress(0, 0, 'Releasing object removal GPU resources')
                 self.removal_manager.unload_minimax_model()
-                QApplication.processEvents()
-                self.sam_manager.load_model_to_device()
-                progress.close()
-        else:  # ProPainterX
-            try:
-                # offload sam model
-                self.sam_manager.offload_model_to_cpu()
-                QApplication.processEvents()
-                self.removal_manager.run_object_removal_propainterx(self.point_manager.points, parent_window=self)
-            except Exception as e:
-                if "out of memory" in str(e).lower():
-                    show_message_dialog(self, title="Error", message="An out of memory error occurred. Please try again with lower settings." , type="warning")
-                else:
-                    print(f"An error occurred: {e}")
-            finally:
-                progress = QProgressDialog("Loading...", None, 0, 0, self)
-                progress.setWindowTitle("Please Wait")
-                progress.setModal(True)
-                progress.show()
-                QApplication.processEvents()
                 self.removal_manager.unload_propainterx_model()
-                QApplication.processEvents()
+                progress(0, 0, 'Restoring segmentation model to its device')
                 self.sam_manager.load_model_to_device()
-                progress.close()
+        try:
+            run_compute(self, self.removal_tab.method_combo.currentText(), process)
+        except InterruptedError as error:
+            self.update_status_bar(str(error))
+        except Exception as error:
+            show_message_dialog(self, title='Object removal failed', message=str(error), type='warning')
 
         self.update_removal_status()
         self._update_current_frame_display()
@@ -2786,7 +2856,7 @@ class MainWindow(QMainWindow):
             self.is_playing = True
             self.play_pause_btn.setIcon(self.icon_pause)
             # Adjust interval to your desired FPS (e.g. ~33 ms for 30fps, 40 ms for 25fps)
-            self.play_timer.start(40)
+            self.play_timer.start(max(1, round(1000 / max(1, self.settings_mgr.get_app_setting('playback_fps', 24)))))
 
         else:
             # Pause playback
@@ -2796,6 +2866,8 @@ class MainWindow(QMainWindow):
     
     def play_next_frame(self):
         """Advance to the next frame during playback"""
+        if self.preview.busy:
+            return
         current_value = self.frame_slider.value()
         if current_value < self.frame_slider.maximum():
             self.frame_slider.setValue(current_value + 1)
@@ -2927,7 +2999,7 @@ class MainWindow(QMainWindow):
         is_edit_view = self.view_combo.currentText() == "Segmentation-Edit"
         
         # Enable/disable point clicks in image viewer (but keep zoom/pan)
-        self.viewer.point_editing_enabled = is_edit_view
+        self.viewer.point_editing_enabled = is_edit_view and self._displayed_frame == self.frame_slider.value()
     
     def set_object_id(self, object_id):
         """Set the selected object ID in the segmentation tab"""
@@ -3114,10 +3186,12 @@ class MainWindow(QMainWindow):
         
     def load_file(self, file_path):
         """Load a file (consolidated method for both menu and command line usage)"""
+        self.preview.close()
         file_ext = os.path.splitext(file_path)[1].lower()
         if file_ext in ('.sammie','.sammieproj'):
             return self._project_action(lambda: self.projects.open(file_path))
         exr_import = None
+        media_import = None
         if file_ext == '.exr':
             # Prepare all pixels before discarding the previous session. Invalid
             # frames or Cancel leave the old project and its points untouched.
@@ -3128,6 +3202,16 @@ class MainWindow(QMainWindow):
                     return False
             except Exception as error:
                 show_message_dialog(self, title='EXR import', message=str(error), type='warning')
+                return False
+        if file_ext != '.exr':
+            try:
+                from sammie.ingest import prepare_dialog
+                media_import = prepare_dialog(file_path,
+                    self.projects.scratch if self.projects.descriptor else core.temp_dir,
+                    self.settings_mgr, self, images=file_ext in ('.png','.jpg','.jpeg','.bmp','.tiff','.gif','.webp'))
+                if media_import is None: return False
+            except Exception as error:
+                show_message_dialog(self, title='Media import', message=str(error), type='warning')
                 return False
         self.projects.detach()
         # Clear all points and propagation data
@@ -3157,7 +3241,9 @@ class MainWindow(QMainWindow):
                 from fractions import Fraction
                 from sammie.exr_media import commit
                 stage, info = exr_import
-                commit(stage, core.temp_dir)
+                from sammie.background_io import run_io
+                run_io(self, 'Installing EXR working frames and cleaning the previous session',
+                       lambda progress, cancel: commit(stage, core.temp_dir))
                 core.VideoInfo.height, core.VideoInfo.width = info['shape']
                 core.VideoInfo.total_frames = framecount = len(info['source_files'])
                 core.VideoInfo.fps_rational = info['fps']
@@ -3169,10 +3255,14 @@ class MainWindow(QMainWindow):
                 self.settings_mgr.set_session_setting('aov_start_number', info['source_numbers'][0])
                 self.settings_mgr.set_session_setting('foreground_settings', {'color_space': info['options']['color_space']})
                 self.sidebar.load_values_from_settings()
-            elif file_ext in ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.gif', '.webp']:
-                framecount = sammie.load_image_sequence(file_path, parent_window=self)
             else:
-                framecount = sammie.load_video(file_path, parent_window=self)
+                from sammie.ingest import commit, apply_info
+                stage, info = media_import
+                from sammie.background_io import run_io
+                run_io(self, 'Installing frames and cleaning the previous session',
+                       lambda progress, cancel: commit(stage, core.temp_dir))
+                apply_info(info, self.settings_mgr)
+                framecount = info['total_frames']
                 
             if framecount and framecount > 0:
                 # Save video info to session
@@ -3195,7 +3285,16 @@ class MainWindow(QMainWindow):
                 print(f"Loaded {framecount} frames")
                 
                 # Initialize the predictor
-                self.sam_manager.initialize_predictor()
+                if self.sam_manager.loaded_model_name and self.sam_manager.predictor is not None:
+                    from sammie.background_io import run_compute
+                    try:
+                        run_compute(self, 'Initializing video session', lambda progress, cancel:
+                            self.sam_manager.initialize_predictor())
+                    except BaseException:
+                        self.sam_manager.unload_segmentation_model()
+                        raise
+                elif self.settings_mgr.get_app_setting('auto_load_model', False):
+                    self._load_model_responsive(self.settings_mgr.get_session_setting('sam_model', 'Base'))
 
                 # Enable load model button
                 self.sidebar.segmentation_tab.sam_model_btn.setEnabled(True)
@@ -3204,19 +3303,17 @@ class MainWindow(QMainWindow):
                 self.frame_slider.setRange(0, framecount-1)
                 
                 # Load and display the first frame - reset zoom for new video
-                current_frame = 0
-                view_options = self.get_view_options()
-                updated_image = sammie.update_image(current_frame, view_options, self.point_manager.points)
-                if updated_image:
-                    self.viewer.load_image_reset_zoom(updated_image)  # Reset zoom for new content
-                    self.fit_to_screen()
                 self.frame_slider.setValue(0)
+                self._request_preview(0, reset_zoom=True)
                 return True
             else:
                 print(f"Failed to load file: {file_path}")
                 return False
                 
         except Exception as e:
+            if media_import is not None:
+                from sammie.ingest import discard
+                discard(media_import[0])
             if exr_import is not None:
                 from sammie.exr_media import discard
                 discard(exr_import[0])
@@ -3227,25 +3324,12 @@ class MainWindow(QMainWindow):
 
     def resume_prev_session(self):
         """Resume previous session"""
+        self.preview.close()
         # Session settings loaded earlier in __init__, just check if session exists
         session_loaded = self.settings_mgr.session_exists() 
         framecount = sammie.resume_session()
         if framecount is not None and framecount > 0:
             print(f"Loaded {framecount} frames")
-            # initialize the predictor
-            selected_model = self.settings_mgr.get_session_setting('sam_model', 'Base')
-            if selected_model != self.sam_manager.loaded_model_name:
-                try:
-                    self.sam_manager.load_segmentation_model(selected_model, parent_window=self)
-                except Exception as error:
-                    print(error)
-                    self.update_status_bar(str(error))
-            try:
-                self.sam_manager.initialize_predictor()
-            except Exception as error:
-                self.sam_manager.unload_segmentation_model()
-                self.update_status_bar(str(error))
-                print(error)
             # Enable load model button
             self.sidebar.segmentation_tab.sam_model_btn.setEnabled(True)
             # Update frame slider range
@@ -3256,13 +3340,6 @@ class MainWindow(QMainWindow):
                 if points:
                     self.point_manager.points = points
                     self.point_manager._notify('load_all')
-                    if self.sam_manager.predictor is not None:
-                        try:
-                            self.sam_manager.replay_points(points)
-                        except Exception as error:
-                            self.update_status_bar(str(error))
-                            print(error)
-                
                 # Load UI state from session
                 self._load_session_ui_state()
 
@@ -3272,13 +3349,18 @@ class MainWindow(QMainWindow):
                 self.frame_slider.set_in_point(in_point)
                 self.frame_slider.set_out_point(out_point)
 
+            if self.settings_mgr.get_app_setting('auto_load_model', False):
+                try:
+                    self._load_model_responsive(self.settings_mgr.get_session_setting('sam_model', 'Base'))
+                except Exception as error:
+                    self.update_status_bar(str(error))
+                    print(error)
+            else:
+                self.update_status_bar('Ready to review. Click Load Model when you need to edit or track.')
             # Load and display the first frame - reset zoom for resumed session
-            current_frame = 0
-            view_options = self.get_view_options()
-            updated_image = sammie.update_image(current_frame, view_options, self.point_manager.points)
-            if updated_image:
-                self.viewer.load_image_reset_zoom(updated_image)  # Reset zoom for resumed session
-            self.frame_slider.setValue(0)
+            current_frame = min(max(0, self.settings_mgr.get_session_setting('current_frame', 0)), framecount-1)
+            self.frame_slider.setValue(current_frame)
+            self._request_preview(current_frame, reset_zoom=True)
     
     def save_points(self):
         """Save points to file"""

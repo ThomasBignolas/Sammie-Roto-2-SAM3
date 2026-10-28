@@ -62,6 +62,9 @@ class ApplicationSettings:
     force_cpu: bool = False    
     frame_format: str = "png"
     display_update_frequency: int = 5
+    preview_cache_mib: int = 256
+    cpu_threads: int = 0  # Auto: at most four, leaving two logical CPUs free.
+    auto_load_model: bool = False
     
     # Deduplication
     dedupe_threshold: float = 0.8

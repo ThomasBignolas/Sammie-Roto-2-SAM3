@@ -21,7 +21,9 @@ def preview(frame, points, view_options):
             h,w=alpha.shape
             if view_options.get('background_style')=='checkerboard':
                 cell=max(8,round(min(h,w)/40))
-                grid=((np.arange(h)[:,None]//cell+np.arange(w)[None,:]//cell)%2)
+                rows=((np.arange(h)//cell)%2).astype(np.uint8)
+                cols=((np.arange(w)//cell)%2).astype(np.uint8)
+                grid=rows[:,None]^cols[None,:]
                 background=np.repeat(np.where(grid[...,None],160/255,104/255).astype(np.float32),3,axis=2)
             else:
                 background=np.broadcast_to(np.array(view_options.get('bgcolor',(0,255,0)),np.float32)/255,linear.shape)

@@ -18,81 +18,36 @@ class TrackingMixin:
 
     def _propagate(self, parent_window, start_frame_idx, max_frame_num_to_track, reverse=False,
                     show_progress=True):
-        """Core propagation loop shared by all tracking functions.
-
-        Args:
-            parent_window: Used for the progress dialog and to nudge the frame slider as we go.
-            start_frame_idx: Frame to start propagating from.
-            max_frame_num_to_track: How many additional frames to propagate beyond the start
-                frame, or None to propagate to the end (or beginning, if reverse=True) of the video.
-            reverse: If True, propagate backward toward frame 0 instead of forward.
-            show_progress: If False, skips the progress dialog - intended for single-frame steps
-                where a modal dialog would just be visual noise.
-
-        Returns:
-            (last_frame_idx, cancelled) - last_frame_idx is the last frame actually processed
-            (None if nothing was processed), cancelled is True if the user hit Cancel.
-        """
-        settings_mgr = get_settings_manager()
-        display_update_frequency = settings_mgr.get_app_setting("display_update_frequency", 5)
-        total_frames = (max_frame_num_to_track + 1) if max_frame_num_to_track is not None else core.VideoInfo.total_frames
-
-        progress_dialog = None
-        if show_progress:
-            progress_dialog = QProgressDialog("Tracking...", "Cancel", 0, 100, parent_window)
-            progress_dialog.setWindowTitle("Progress")
-            progress_dialog.setWindowModality(Qt.WindowModal)
-            progress_dialog.setAutoClose(True)
-            progress_dialog.show()
-
-        last_frame_idx = None
-        cancelled = False
-
-        iterator = self.iter_masks(
-                start_frame_idx=start_frame_idx,
+        """Track in a worker; only queued progress updates touch the timeline."""
+        from sammie.background_io import run_compute
+        frequency = get_settings_manager().get_app_setting('display_update_frequency', 5)
+        available = start_frame_idx + 1 if reverse else core.VideoInfo.total_frames - start_frame_idx
+        total = min(available, max_frame_num_to_track + 1) if max_frame_num_to_track is not None else available
+        state = {'last': None, 'cancelled': False}
+        def track(progress, cancel):
+            iterator = self.iter_masks(start_frame_idx=start_frame_idx,
                 max_frame_num_to_track=max_frame_num_to_track, reverse=reverse)
-        try:
-            for out_frame_idx, masks in iterator:
-                self.write_masks(out_frame_idx, masks)
-
-                last_frame_idx = out_frame_idx
-
-                if progress_dialog is not None:
-                    frames_processed = abs(out_frame_idx - start_frame_idx) + 1
-                    progress_dialog.setValue(int(frames_processed * 100 / total_frames))
-
-                # Update display at the specified frequency (always update for quick, dialog-less steps)
-                if not show_progress or out_frame_idx % display_update_frequency == 0:
-                    try:
-                        parent_window.frame_slider.setValue(out_frame_idx)
-                    except Exception as e:
-                        print(f"Error updating display: {e}")
-
-                QApplication.processEvents()
-                if progress_dialog is not None and progress_dialog.wasCanceled():
-                    cancelled = True
-                    break
-
-        finally:
-            iterator.close()
-            if progress_dialog is not None:
-                progress_dialog.close()
-
-        if progress_dialog is not None:
-            if cancelled:
-                progress_dialog.close()
-            else:
-                progress_dialog.setValue(100)
-
-        # Always leave the slider showing the last frame actually processed
-        if last_frame_idx is not None:
             try:
-                parent_window.frame_slider.setValue(last_frame_idx)
-                QApplication.processEvents()
-            except Exception as e:
-                print(f"Error updating display: {e}")
-
-        return last_frame_idx, cancelled
+                for frame, masks in iterator:
+                    if cancel():
+                        state['cancelled'] = True
+                        break
+                    self.write_masks(frame, masks)
+                    state['last'] = frame
+                    progress(abs(frame-start_frame_idx)+1, total, f'Tracking frame {frame} - {"backward" if reverse else "forward"}')
+            finally:
+                iterator.close()
+        def update(done, count, message):
+            frame = state['last']
+            if parent_window is not None and frame is not None and (not show_progress or frame % frequency == 0):
+                parent_window.frame_slider.setValue(frame)
+        try:
+            run_compute(parent_window, 'Tracking', track, update)
+        except InterruptedError:
+            state['cancelled'] = True
+        if parent_window is not None and state['last'] is not None:
+            parent_window.frame_slider.setValue(state['last'])
+        return state['last'], state['cancelled']
 
     def track_objects(self, parent_window):
         """Track all objects across the full in/out point range (or the entire video)."""

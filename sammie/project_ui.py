@@ -36,15 +36,8 @@ class ProjectController:
         self.window.update_status_bar(f'Project workspace: {root} — scenes, footage, exports, nuke')
 
     def _progress(self, title, action):
-        d = QProgressDialog(title,'Cancel',0,0,self.window)
-        d.setWindowModality(Qt.WindowModal)
-        d.setAutoClose(False)
-        d.show()
-        def update(n,total,message):
-            d.setMaximum(total); d.setValue(n); d.setLabelText(message)
-            QApplication.processEvents()
-        try: return action(update,d.wasCanceled)
-        finally: d.close()
+        from .background_io import run_io
+        return run_io(self.window, title, action)
 
     def activate(self, descriptor, resume=True):
         root,_ = projects.read_project(descriptor)
@@ -52,6 +45,7 @@ class ProjectController:
             return
         lock = projects.ProjectLock(root).acquire()
         try:
+            if hasattr(self.window, 'preview'): self.window.preview.close()
             from .workflow.jobs import recover
             recover(root)
             if self.descriptor: self.flush()
@@ -72,6 +66,7 @@ class ProjectController:
 
     def detach(self):
         if not self.descriptor: return
+        if hasattr(self.window, 'preview'): self.window.preview.close()
         self.flush()
         self.window.sam_manager.unload_segmentation_model()
         if self.lock: self.lock.release()
@@ -92,8 +87,9 @@ class ProjectController:
         if not path: return False
         descriptor=self._progress('Preparing working project',lambda progress,cancel:
             projects.create_project(core.temp_dir,path,progress,cancel))
-        self.activate(descriptor,resume=bool(self.window.sam_manager.loaded_model_name))
+        self.activate(descriptor,resume=False)
         self.window.point_manager.points = self.window.settings_mgr.load_points() or []
+        self.window._update_current_frame_display()
         self.window.update_status_bar('Working project ready. Subsequent saves write settings and points only.')
         return True
 

@@ -94,19 +94,11 @@ def prepare_dialog(path, session_root, parent=None):
     if dialog.exec() != QDialog.Accepted:
         return None
     files = dialog.files if dialog.range.currentData() else [dialog.path]
-    progress = QProgressDialog('Importing EXRs...', 'Cancel', 0, len(files), parent)
-    progress.setWindowTitle('EXR import')
-    progress.setWindowModality(Qt.WindowModal)
-    progress.setAutoClose(False)
-    progress.show()
-    def update(done,total,message):
-        progress.setLabelText(message)
-        progress.setValue(done)
-        QApplication.processEvents()
+    from .background_io import run_io
+    options = dialog.options()
     try:
-        return prepare(files, dialog.options(), Path(session_root).resolve().parent,
-                       progress=update, cancel=progress.wasCanceled)
+        return run_io(parent, 'Importing EXRs', lambda update, cancel:
+                       prepare(files, options, Path(session_root).resolve().parent,
+                               progress=update, cancel=cancel))
     except InterruptedError:
         return None
-    finally:
-        progress.close()

@@ -186,6 +186,8 @@ class AOVDialog(QDialog):
         self.button = QPushButton('Cancel')
         for widget in (self.label, self.bar, self.button):
             layout.addWidget(widget)
+        from sammie.background_io import add_activity_status
+        add_activity_status(self, layout, self.label)
         self.result, self.failure, self.cancelled = None, None, False
         self.tail, self.buffer = [], ''
         self.request = Path(job['root'])/'aov'/'jobs'/(uuid.uuid4().hex+'.json')
@@ -256,11 +258,15 @@ class AOVDialog(QDialog):
             self.cancelled = True
             self.button.setEnabled(False)
             self.label.setText('Cancelling and releasing GPU resources...')
-            self.process.terminate()
+            from sammie.processes import stop_worker_tree
+            if self.process.processId(): stop_worker_tree(int(self.process.processId()), wait=False)
+            else: self.process.kill()
             QTimer.singleShot(2000, self.kill_if_running)
         else:
             super().reject()
 
     def kill_if_running(self):
         if self.process.state() != QProcess.NotRunning:
-            self.process.kill()
+            from sammie.processes import stop_worker_tree
+            if self.process.processId(): stop_worker_tree(int(self.process.processId()), wait=False)
+            else: self.process.kill()

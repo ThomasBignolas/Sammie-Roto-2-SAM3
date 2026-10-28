@@ -65,7 +65,7 @@ class Sam2Backend(TrackingMixin, core.CallbackMixin):
             model_cfg = "./configs/sam2.1/sam2.1_hiera_b+.yaml"
 
         # Check if files exist
-        if not ensure_models(sam_model, parent=parent_window):
+        if not os.path.isfile(checkpoint) and not ensure_models(sam_model, parent=parent_window):
             return False
 
         self.predictor = build_sam2_video_predictor(model_cfg, checkpoint, device=device)
@@ -99,6 +99,10 @@ class Sam2Backend(TrackingMixin, core.CallbackMixin):
             self.predictor.to(device)
 
     def initialize_predictor(self):
+        if not core.VideoInfo.total_frames:
+            return
+        from .sam2_frames import install
+        install()
         self.inference_state = self.predictor.init_state(
             video_path=core.frames_dir, async_loading_frames=True, offload_video_to_cpu=True
         )
@@ -294,9 +298,12 @@ class Sam2Backend(TrackingMixin, core.CallbackMixin):
         self.predictor.reset_state(self.inference_state)
 
         for frame_number in range(frame_count):
+            from sammie.background_io import check_cancelled, report
+            check_cancelled()
             frame_points = [p for p in points_list if p['frame'] == frame_number]
             if not frame_points:
                 continue
+            report(f'Restoring SAM 2 prompts: frame {frame_number+1}/{frame_count}')
 
             frame_object_ids = {p['object_id'] for p in frame_points}
             for object_id in frame_object_ids:

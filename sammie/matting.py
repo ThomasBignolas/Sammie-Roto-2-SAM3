@@ -118,7 +118,8 @@ class MattingManager(core.CallbackMixin):
 
     def _make_progress_dialog(self, parent_window, total_operations, unit="frame"):
         """Create and show the Qt progress dialog and tqdm bar"""
-        progress_dialog = QProgressDialog("Running matting...", "Cancel", 0, 100, parent_window)
+        from .background_io import progress_dialog as make_progress
+        progress_dialog = make_progress("Running matting...", "Cancel", 0, 100, parent_window)
         progress_dialog.setWindowTitle("Matting Progress")
         progress_dialog.setWindowModality(Qt.WindowModal)
         progress_dialog.setAutoClose(True)
@@ -836,8 +837,11 @@ class VideoMaMaManager(MattingManager):
         """
         cond_frames = []
         mask_frames = []
+        from .background_io import report, check_cancelled
  
         for frame_num in range(abs_start, abs_end):
+            check_cancelled()
+            report(f'Preparing VideoMaMa input: frame {frame_num}', frame_num-abs_start, abs_end-abs_start)
             frame_path = os.path.join(core.frames_dir, f"{frame_num:05d}.{extension}")
             if not os.path.exists(frame_path):
                 print(f"Warning: Frame not found: {frame_path}")

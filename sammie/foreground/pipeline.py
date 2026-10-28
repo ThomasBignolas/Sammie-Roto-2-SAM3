@@ -37,13 +37,11 @@ def prepare(job, progress=lambda done,total,message: None):
         job.get('session',{}).get('vitmatte_view','validated') != 'original')
     if require_refinement:
         from sammie.refinement.cache import RefinementCache
-        from sammie.refinement.algorithms import RefinementSettings
-        from sammie.settings_manager import get_settings_manager
-        with mattes.context():
-            refinement = RefinementSettings.from_session(get_settings_manager())
+        cache = RefinementCache(root)
+        refinement = cache.applied_settings()
         for frame in range(first,last+1):
             for oid in mattes.ids:
-                if mattes.path(frame,oid).is_file() and RefinementCache(root).selected(frame,oid,refinement,job['session'].get('vitmatte_view','validated')) is None:
+                if mattes.path(frame,oid).is_file() and (refinement is None or cache.selected(frame,oid,refinement,job['session'].get('vitmatte_view','validated')) is None):
                     raise ValueError('Selected ViTMatte result is missing or stale. Run ViTMatte again or explicitly choose its Original VideoMaMa view before CorridorKey.')
     records = {}
     for frame in range(first, last+1):

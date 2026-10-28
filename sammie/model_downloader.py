@@ -455,6 +455,9 @@ def ensure_models(
             download(spec, token=get_token())
         return True
 
+    from PySide6.QtWidgets import QApplication
+    if QApplication.instance() and QThread.currentThread() != QApplication.instance().thread():
+        raise RuntimeError('Model files disappeared after preflight. Retry from the application to download them.')
     dlg = ModelDownloadDialog(needed, parent=parent, title=title)
     accepted = dlg.exec() == QDialog.Accepted
     return accepted and dlg.succeeded

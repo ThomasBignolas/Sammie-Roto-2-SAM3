@@ -11,10 +11,6 @@ def selected_alpha(frame, points, object_id_filter=None):
     manager = get_settings_manager()
     if not manager.get_session_setting('vitmatte_enabled', False) or manager.get_session_setting('matany_model') != 'VideoMaMa':
         return None
-    try:
-        settings = RefinementSettings.from_session(manager)
-    except ValueError:
-        return None  # Users may temporarily cross thresholds while editing controls.
     stage = manager.get_session_setting('vitmatte_view', 'validated')
     root = Path(core.temp_dir)
     ids = sorted({p['object_id'] for p in points if 'object_id' in p})
@@ -24,15 +20,18 @@ def selected_alpha(frame, points, object_id_filter=None):
         ids = [i for i in ids if i == object_id_filter]
     result = np.zeros((core.VideoInfo.height, core.VideoInfo.width), np.float32)
     cache = RefinementCache(root)
+    # UI values describe the next run. Keep the completed result selected until
+    # Refine / Resume publishes another one, even during invalid threshold edits.
+    settings = cache.applied_settings()
     source = root/'frames'/f'{frame:05d}.{core.get_frame_extension()}'
     for oid in ids:
         png = root/'matting'/f'{frame:05d}'/f'{oid}.png'
         if not png.exists():
             continue
-        alpha = cache.selected(frame, oid, settings, stage) if stage != 'original' else None
+        alpha = cache.selected(frame, oid, settings, stage) if settings is not None and stage != 'original' else None
         if alpha is None:
             alpha, _ = load_base(root, frame, oid, source, png)
-        result = np.maximum(result, alpha)
+        np.maximum(result, alpha, out=result)
     grow = manager.get_session_setting('matany_grow', 0)
     gamma = manager.get_session_setting('matany_gamma', 1.0)
     if grow:

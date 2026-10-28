@@ -126,7 +126,7 @@ def _convert_to_qpixmap(image):
     """Convert NumPy array to QPixmap"""
     if image is None:
         return QPixmap.fromImage(QImage())
-    image = image.copy()
+    image = np.ascontiguousarray(image)
     height, width = image.shape[:2]
 
     if len(image.shape) == 2:  # Grayscale
@@ -194,8 +194,10 @@ def _composite_bgcolor(image, mask, bgcolor, background_style='solid'):
     if background_style == 'checkerboard':
         h, w = image.shape[:2]
         cell = max(8, round(min(h, w) / 40))
-        grid = ((np.arange(h)[:, None] // cell + np.arange(w)[None, :] // cell) % 2)
-        bg = np.repeat(np.where(grid[..., None], 160, 104).astype(np.uint8), 3, axis=2)
+        rows = ((np.arange(h) // cell) % 2).astype(np.uint8)
+        cols = ((np.arange(w) // cell) % 2).astype(np.uint8)
+        grid = rows[:, None] ^ cols[None, :]
+        bg = np.repeat((grid[..., None] * 56 + 104), 3, axis=2)
     else:
         bg = np.full_like(image, bgcolor)
     alpha = mask.astype(np.float32) / 255.0
@@ -385,20 +387,21 @@ def draw_masks(image, processed_masks):
         return image
 
     combined_colored_mask = np.zeros_like(image, dtype=np.uint8)
-    mask_binary = np.zeros(image.shape[:2], dtype=bool)
+    mask_binary = np.zeros(image.shape[:2], dtype=np.uint8)
 
     for object_id, mask in processed_masks.items():
-        color = np.array(core.PALETTE[object_id % len(core.PALETTE)], dtype=np.uint8)
-        mask_bin = mask > 0
-        mask_binary |= mask_bin
-        combined_colored_mask[mask_bin] = color
+        color = core.PALETTE[object_id % len(core.PALETTE)]
+        mask_bin = cv2.compare(mask, 0, cv2.CMP_GT)
+        cv2.bitwise_or(mask_binary, mask_bin, dst=mask_binary)
+        # OpenCV's masked copy avoids several large NumPy boolean gather/scatter
+        # temporaries at source resolution. Overlap order is unchanged.
+        color_image = np.broadcast_to(np.asarray(color, np.uint8), image.shape)
+        cv2.copyTo(color_image, mask_bin, combined_colored_mask)
 
     if np.any(mask_binary):
         overlay = image.copy()
-        overlay[mask_binary] = cv2.addWeighted(
-            image[mask_binary], 0.5,
-            combined_colored_mask[mask_binary], 0.5, 0
-        )
+        blend = cv2.addWeighted(image, 0.5, combined_colored_mask, 0.5, 0)
+        cv2.copyTo(blend, mask_binary, overlay)
         return overlay
     else:
         return image
@@ -430,6 +433,7 @@ def draw_points(image, frame_number, points, highlighted_points=None):
     frame_points = [p for p in points if p['frame'] == frame_number and p.get('kind') != 'sam3_seed']
     if not frame_points:
         return image
+    image = image.copy()  # Cached source pixels must never acquire drawn prompts.
 
     highlighted_set = set()
     if highlighted_points:
@@ -491,140 +495,21 @@ def remove_backup_mattes():
 # Video / image I/O
 # .........................................................................................
 
-def load_video(video_file, parent_window):
-    """Load video and save frames as images using multi-threaded writers"""
-    from sammie.projects import MARKER
+def load_video(video_file, parent_window=None):
+    from .ingest import prepare_dialog, commit, apply_info
+    from .projects import MARKER
     if (Path(core.temp_dir)/MARKER).exists():
         raise ValueError('Detach the working project before importing new media.')
-    if os.path.exists(core.temp_dir):
-        shutil.rmtree(core.temp_dir)
-    os.makedirs(core.frames_dir)
-    os.makedirs(core.mask_dir)
-    os.makedirs(core.matting_dir)
-    print(f"Loading video: {video_file}")
+    manager = get_settings_manager()
+    prepared = prepare_dialog(video_file, core.temp_dir, manager, parent_window)
+    if prepared is None: return 0
+    stage, info = prepared
+    from .background_io import run_io
+    run_io(parent_window, 'Installing frames and cleaning the previous session',
+           lambda progress, cancel: commit(stage, core.temp_dir))
+    apply_info(info, manager)
+    return info['total_frames']
 
-    progress_dialog = QProgressDialog("Loading video...", "Cancel", 0, 100, parent_window)
-    progress_dialog.setWindowTitle("Progress")
-    progress_dialog.setWindowModality(Qt.WindowModal)
-    progress_dialog.setAutoClose(True)
-    progress_dialog.show()
-
-    container = av.open(video_file)
-    stream = container.streams.video[0]
-
-    # Enable threading in the decoder itself for faster demuxing
-    stream.thread_type = "AUTO"
-
-    core.VideoInfo.width = stream.width
-    core.VideoInfo.height = stream.height
-    source_rate = stream.average_rate or stream.guessed_rate
-    if source_rate is None:
-        raise ValueError('The source has no usable frame-rate metadata')
-    core.VideoInfo.fps = float(source_rate)
-    core.VideoInfo.fps_rational = str(source_rate)
-    # frames may be None for some containers (e.g. MKV), fall back to counting
-    core.VideoInfo.total_frames = stream.frames or 0
-    total_frames = core.VideoInfo.total_frames
-    core.VideoInfo.color_space = src_cs = int(stream.codec_context.colorspace)  # 1=BT.709, 5=BT.601 etc.
-    src_range = int(stream.codec_context.color_range)  # 1=limited, 2=full
-
-    frame_count = 0
-    frame_timing = []
-    settings_mgr = get_settings_manager()
-    frame_format = settings_mgr.get_app_setting("frame_format", "png")
-    settings_mgr.set_session_setting('video_fps_rational', str(source_rate))
-
-    # --- Threaded frame writing setup ---
-    save_q = queue.Queue(maxsize=100)
-    num_workers = min(8, max(2, multiprocessing.cpu_count() // 2))
-    write_errors = queue.Queue()
-
-    def save_worker():
-        while True:
-            item = save_q.get()
-            if item is None:
-                save_q.task_done()
-                break
-            path, frame = item
-            try:
-                if not cv2.imwrite(path, frame):
-                    raise OSError(f'Could not write source frame: {path}')
-            except Exception as e:
-                write_errors.put(str(e))
-            save_q.task_done()
-
-    writers = []
-    for _ in range(num_workers):
-        t = threading.Thread(target=save_worker, daemon=True)
-        t.start()
-        writers.append(t)
-
-    cancelled = False
-
-    with tqdm(total=total_frames or None) as progress:
-        for frame in container.decode(stream):
-            frame_timing.append({'index': frame_count, 'pts': frame.pts,
-                                 'time_base': str(frame.time_base)})
-            frame_rgb = frame.reformat(
-                format="rgb24",
-                src_colorspace=src_cs,
-                dst_colorspace=1,   # always output BT.709
-                src_color_range=src_range,
-                dst_color_range=2,  # always output full range for PNG
-            ).to_ndarray()
-
-            # cv2.imwrite expects BGR
-            frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
-
-            frame_filename = os.path.join(core.frames_dir, f"{frame_count:05d}.{frame_format}")
-            save_q.put((frame_filename, frame_bgr))
-            frame_count += 1
-            progress.update(1)
-
-            if total_frames:
-                progress_dialog.setValue(frame_count * 100 // total_frames)
-            QApplication.processEvents()
-
-            if progress_dialog.wasCanceled():
-                cancelled = True
-                break
-
-    container.close()
-
-    if cancelled:
-        # Drain the queue without processing so workers can be shut down cleanly
-        while not save_q.empty():
-            try:
-                save_q.get_nowait()
-                save_q.task_done()
-            except queue.Empty:
-                break
-        for _ in writers:
-            save_q.put(None)
-        for t in writers:
-            t.join()
-        if os.path.exists(core.temp_dir):
-            shutil.rmtree(core.temp_dir)
-        progress_dialog.close()
-        print("Operation cancelled by user.")
-        return 0
-
-    save_q.join()
-    for _ in writers:
-        save_q.put(None)
-    for t in writers:
-        t.join()
-
-    progress_dialog.setValue(100)
-    progress_dialog.close()
-    if not write_errors.empty():
-        raise OSError(write_errors.get())
-    with open(os.path.join(core.temp_dir, 'source_timing.json'), 'w', encoding='utf-8') as timing_file:
-        json.dump({'fps': str(source_rate), 'frames': frame_timing}, timing_file)
-
-    core.VideoInfo.total_frames = frame_count
-    settings_mgr.set_session_setting("sequence_start_frame", 0)  # not an image sequence
-    return frame_count
 
 def detect_image_sequence(image_path):
     """
@@ -667,7 +552,8 @@ def detect_image_sequence(image_path):
             for file_path in potential_files:
                 file_name = os.path.basename(file_path)
                 file_base = os.path.splitext(file_name)[0]
-                if re.match(pattern, file_base):
+                candidate = re.match(pattern, file_base)
+                if candidate and candidate.group(1) == base_name:
                     sequence_files.append(file_path)
 
             def natural_sort_key(path):
@@ -709,104 +595,20 @@ def get_sequence_start_frame(files):
     return 0
 
 
-def load_image_sequence(image_path, parent_window):
-    """
-    Load an image or image sequence. Detects sequences automatically and prompts user.
-    """
-    from sammie.projects import MARKER
+def load_image_sequence(image_path, parent_window=None):
+    from .ingest import prepare_dialog, commit, apply_info
+    from .projects import MARKER
     if (Path(core.temp_dir)/MARKER).exists():
         raise ValueError('Detach the working project before importing new media.')
-    is_sequence, sequence_files, sequence_base_name = detect_image_sequence(image_path)
-    files_to_load = [image_path]
-
-    if is_sequence:
-        msg_box = QMessageBox(parent_window)
-        msg_box.setWindowTitle("Image Sequence Detected")
-        msg_box.setText(f"The selected image appears to be part of a sequence with {len(sequence_files)} images.")
-        msg_box.setInformativeText("Would you like to load the entire sequence or just the single image?")
-
-        sequence_button = msg_box.addButton("Load Sequence", QMessageBox.AcceptRole)
-        single_button = msg_box.addButton("Load Single Image", QMessageBox.RejectRole)
-        cancel_button = msg_box.addButton("Cancel", QMessageBox.RejectRole)
-
-        msg_box.exec()
-
-        if msg_box.clickedButton() == sequence_button:
-            files_to_load = sequence_files
-        elif msg_box.clickedButton() == single_button:
-            files_to_load = [image_path]
-        else:
-            return 0
-
-    if os.path.exists(core.temp_dir):
-        shutil.rmtree(core.temp_dir)
-    os.makedirs(core.frames_dir)
-    os.makedirs(core.mask_dir)
-    os.makedirs(core.matting_dir)
-
-    print(f"Loading {'image sequence' if len(files_to_load) > 1 else 'image'}: {len(files_to_load)} file(s)")
-
-    progress_dialog = QProgressDialog("Loading images...", "Cancel", 0, 100, parent_window)
-    progress_dialog.setWindowTitle("Progress")
-    progress_dialog.setWindowModality(Qt.WindowModal)
-    progress_dialog.setAutoClose(True)
-    progress_dialog.show()
-
-    settings_mgr = get_settings_manager()
-    app_frame_format = settings_mgr.get_app_setting("frame_format", "png")
-
-    first_image = cv2.imread(files_to_load[0])
-    if first_image is None:
-        progress_dialog.close()
-        show_message_dialog(parent_window, title="Error",
-                            message=f"Could not load image: {files_to_load[0]}", type="critical")
-        return 0
-
-    core.VideoInfo.height, core.VideoInfo.width = first_image.shape[:2]
-    core.VideoInfo.fps = 24.0
-    core.VideoInfo.fps_rational = '24'
-    settings_mgr.set_session_setting('video_fps_rational', '24')
-    core.VideoInfo.total_frames = len(files_to_load)
-
-    for frame_count, source_path in enumerate(files_to_load):
-        image = cv2.imread(source_path)
-        if image is None:
-            print(f"Warning: Could not load {source_path}, skipping...")
-            continue
-
-        source_ext = os.path.splitext(source_path)[1].lower()
-        if source_ext in ['.png', '.jpg', '.jpeg']:
-            output_ext = source_ext.lstrip('.')
-            frame_filename = os.path.join(core.frames_dir, f"{frame_count:05d}.{output_ext}")
-            shutil.copy2(source_path, frame_filename)
-        else:
-            frame_filename = os.path.join(core.frames_dir, f"{frame_count:05d}.{app_frame_format}")
-            cv2.imwrite(frame_filename, image)
-
-        progress_dialog.setValue((frame_count + 1) * 100 // len(files_to_load))
-        QApplication.processEvents()
-
-        if progress_dialog.wasCanceled():
-            if os.path.exists(core.temp_dir):
-                shutil.rmtree(core.temp_dir)
-            progress_dialog.close()
-            return 0
-
-    progress_dialog.setValue(100)
-
-    # Remember the source numbering so sequence exports can start from the same frame number
-    settings_mgr.set_session_setting("sequence_start_frame", get_sequence_start_frame(files_to_load))
-
-    # For an actual multi-file sequence, store a "clean" path (frame number stripped)
-    # as video_file_path, so the {input_name} export filename tag doesn't end up
-    # with one source frame's number baked into it.
-    clean_base_name = sequence_base_name.rstrip('_-.') if sequence_base_name else sequence_base_name
-    if len(files_to_load) > 1 and clean_base_name:
-        clean_ext = os.path.splitext(files_to_load[0])[1]
-        clean_dir = os.path.dirname(files_to_load[0])
-        settings_mgr.set_session_setting("video_file_path", os.path.join(clean_dir, f"{clean_base_name}{clean_ext}"))
-
-    return core.VideoInfo.total_frames
+    manager = get_settings_manager()
+    prepared = prepare_dialog(image_path, core.temp_dir, manager, parent_window, images=True)
+    if prepared is None: return 0
+    stage, info = prepared
+    from .background_io import run_io
+    run_io(parent_window, 'Installing frames and cleaning the previous session',
+           lambda progress, cancel: commit(stage, core.temp_dir))
+    apply_info(info, manager)
+    return info['total_frames']
 
 
 def resume_session():
@@ -821,9 +623,13 @@ def resume_session():
 def restore_video_info():
     if not os.path.exists(core.frames_dir):
         return 0
-    image = core.load_base_frame(0)
-    if image is not None:
-        height, width, channels = image.shape
+    from PIL import Image
+    path = Path(core.frames_dir)/f'00000.{core.get_frame_extension()}'
+    if path.is_file():
+        # Read the image header; decoding every full-resolution pixel is deferred
+        # to the preview process. Missing/invalid metadata still raises clearly.
+        with Image.open(path) as image:
+            width, height = image.size
         core.VideoInfo.width = width
         core.VideoInfo.height = height
         core.VideoInfo.fps = 24

@@ -195,53 +195,58 @@ class ImageExportDialog(QDialog):
         selected_object_id = self.object_id_combo.currentData()
         if selected_object_id != -1:
             object_id_filter = selected_object_id
-        
-        # Get image data using sammie's update_image function
-        image_array = sammie.update_image(
-            self.frame_number, 
-            view_options, 
-            points, 
-            return_numpy=True, 
-            object_id_filter=object_id_filter
-        )
-        
-        if image_array is None:
-            raise RuntimeError("Failed to generate image data")
-        
-        # Convert numpy array to PIL Image
-        if len(image_array.shape) == 2:
-            # Grayscale
-            pil_image = Image.fromarray(image_array, mode='L')
-        elif image_array.shape[2] == 3:
-            # RGB
-            pil_image = Image.fromarray(image_array, mode='RGB')
-        elif image_array.shape[2] == 4:
-            # RGBA
-            pil_image = Image.fromarray(image_array, mode='RGBA')
-        else:
-            raise RuntimeError(f"Unsupported image format: {image_array.shape}")
-        
-        # Determine format from file extension
-        _, ext = os.path.splitext(output_path.lower())
-        is_jpeg = ext in ['.jpg', '.jpeg']
-        
-        # Save image with appropriate settings
-        save_kwargs = {}
-        if is_jpeg:
-            # Convert RGBA to RGB for JPEG
-            if pil_image.mode == 'RGBA':
-                # Create white background
-                bg = Image.new('RGB', pil_image.size, (255, 255, 255))
-                bg.paste(pil_image, mask=pil_image.split()[3])  # Use alpha as mask
-                pil_image = bg
-            
-            save_kwargs['quality'] = 95
-            save_kwargs['optimize'] = True
-        else:  # PNG
-            save_kwargs['optimize'] = True
-        
-        pil_image.save(output_path, **save_kwargs)
-    
+
+        from .background_io import run_compute
+        frame = self.frame_number
+        def export(progress, cancel):
+            progress(0, 0, f'Rendering and saving frame {frame}')
+            # Get image data using sammie's update_image function
+            image_array = sammie.update_image(
+                frame,
+                view_options,
+                points,
+                return_numpy=True,
+                object_id_filter=object_id_filter
+            )
+
+            if image_array is None:
+                raise RuntimeError("Failed to generate image data")
+
+            # Convert numpy array to PIL Image
+            if len(image_array.shape) == 2:
+                # Grayscale
+                pil_image = Image.fromarray(image_array, mode='L')
+            elif image_array.shape[2] == 3:
+                # RGB
+                pil_image = Image.fromarray(image_array, mode='RGB')
+            elif image_array.shape[2] == 4:
+                # RGBA
+                pil_image = Image.fromarray(image_array, mode='RGBA')
+            else:
+                raise RuntimeError(f"Unsupported image format: {image_array.shape}")
+
+            # Determine format from file extension
+            _, ext = os.path.splitext(output_path.lower())
+            is_jpeg = ext in ['.jpg', '.jpeg']
+
+            # Save image with appropriate settings
+            save_kwargs = {}
+            if is_jpeg:
+                # Convert RGBA to RGB for JPEG
+                if pil_image.mode == 'RGBA':
+                    # Create white background
+                    bg = Image.new('RGB', pil_image.size, (255, 255, 255))
+                    bg.paste(pil_image, mask=pil_image.split()[3])  # Use alpha as mask
+                    pil_image = bg
+
+                save_kwargs['quality'] = 95
+                save_kwargs['optimize'] = True
+            else:  # PNG
+                save_kwargs['optimize'] = True
+
+            pil_image.save(output_path, **save_kwargs)
+        run_compute(self, 'Exporting image', export)
+
     def _get_export_view_options(self, output_type, antialias):
         """Get view options for export based on output type"""
         # Get bgcolor from session settings

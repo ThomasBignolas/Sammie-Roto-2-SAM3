@@ -161,6 +161,23 @@ class SettingsDialog(QDialog):
         device_layout.addRow("Force CPU Processing (requires restart):", self.force_cpu_cb)
         
         layout.addWidget(device_group)
+
+        performance = QGroupBox('Performance')
+        performance_layout = QFormLayout(performance)
+        self.preview_cache_spin = QSpinBox()
+        self.preview_cache_spin.setRange(0, 4096)
+        self.preview_cache_spin.setSingleStep(128)
+        self.preview_cache_spin.setSuffix(' MiB')
+        self.preview_cache_spin.setToolTip('Native-resolution rendered previews. Limited further by available RAM. 0 disables the cache.')
+        performance_layout.addRow('Preview cache:', self.preview_cache_spin)
+        self.cpu_threads_spin = QSpinBox()
+        self.cpu_threads_spin.setRange(0, 32)
+        self.cpu_threads_spin.setSpecialValueText('Auto (up to 4)')
+        performance_layout.addRow('CPU threads (restart):', self.cpu_threads_spin)
+        self.auto_load_model_cb = QCheckBox()
+        self.auto_load_model_cb.setToolTip('Off opens projects for review without initializing SAM or replaying prompts. Use Load Model to edit/track.')
+        performance_layout.addRow('Load SAM when opening projects:', self.auto_load_model_cb)
+        layout.addWidget(performance)
         
         # Frame extraction settings group
         frame_group = QGroupBox("Video frame extraction")
@@ -238,6 +255,9 @@ class SettingsDialog(QDialog):
 
         # General tab
         self.force_cpu_cb.setChecked(app_settings.force_cpu)
+        self.preview_cache_spin.setValue(app_settings.preview_cache_mib)
+        self.cpu_threads_spin.setValue(app_settings.cpu_threads)
+        self.auto_load_model_cb.setChecked(app_settings.auto_load_model)
         self.frame_format_combo.setCurrentText(app_settings.frame_format)
         self.display_update_slider.setValue(app_settings.display_update_frequency)
         self.display_update_label.setText(str(app_settings.display_update_frequency))
@@ -266,6 +286,9 @@ class SettingsDialog(QDialog):
 
         # General tab
         app_settings.force_cpu = self.force_cpu_cb.isChecked()
+        app_settings.preview_cache_mib = self.preview_cache_spin.value()
+        app_settings.cpu_threads = self.cpu_threads_spin.value()
+        app_settings.auto_load_model = self.auto_load_model_cb.isChecked()
         app_settings.frame_format = self.frame_format_combo.currentText()
         app_settings.display_update_frequency = self.display_update_slider.value()
         app_settings.dedupe_threshold = self.deduplication_threshold_spin.value()

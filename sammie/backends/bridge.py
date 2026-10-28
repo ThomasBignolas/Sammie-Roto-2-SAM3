@@ -53,13 +53,19 @@ class WorkerClient:
     def _receive(self, timeout=900):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            from sammie.background_io import check_cancelled
+            try:
+                check_cancelled()
+            except InterruptedError:
+                self.close()
+                raise
             try:
                 result = self.messages.get(timeout=0.05)
             except queue.Empty:
                 # Keep Qt painting during model loading without allowing a reentrant edit.
-                from PySide6.QtCore import QEventLoop
+                from PySide6.QtCore import QEventLoop, QThread
                 from PySide6.QtWidgets import QApplication
-                if QApplication.instance():
+                if QApplication.instance() and QThread.currentThread() == QApplication.instance().thread():
                     QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
                 continue
             if 'status' in result:
@@ -108,7 +114,8 @@ class WorkerClient:
 
     def close(self):
         if self.process.poll() is None:
-            self.process.terminate()
+            from sammie.processes import stop_worker_tree
+            stop_worker_tree(self.process.pid)
             try:
                 self.process.wait(timeout=10)
             except subprocess.TimeoutExpired:

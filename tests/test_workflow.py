@@ -259,6 +259,22 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual([j['status'] for j in store.jobs],['complete','complete'],str(store.jobs))
         for job in store.jobs:self.assertTrue(Path(job['delivery']['script']).is_file())
 
+    def test_nuke_delivery_keeps_completed_vitmatte_despite_draft_edits(self):
+        from sammie.workflow.nuke import deliver
+        from sammie.refinement.cache import RefinementCache
+        from sammie.refinement.algorithms import RefinementSettings
+        cache=RefinementCache(self.data)
+        alpha=np.full((64,96),.234567,np.float32)
+        for frame in range(3):
+            cache.write(frame,0,'ready',refined=alpha,validated=alpha,trimap=np.full(alpha.shape,128,np.uint8))
+        cache.publish(RefinementSettings(),{f'{i}/0':'ready' for i in range(3)},{},'test')
+        job=make_job(self.descriptor,['nuke'],0,2,0)
+        job['session'].update(vitmatte_enabled=True,vitmatte_strength=.1,vitmatte_background=.99)
+        job['delivery_parent']=str(self.root/'delivery')
+        result=deliver(job)
+        with OpenEXR.File(str(Path(result['directory'])/'frames/sammie.1001.exr'),separate_channels=True) as f:
+            np.testing.assert_array_equal(f.channels()['A'].pixels,alpha)
+
     def test_update_release_validation_and_installed_manifest(self):
         from sammie.school_updates import installed_version,latest_release
         projects.atomic_json(self.root/'SCHOOL_BUILD.json',dict(commit='a'*40))

@@ -114,11 +114,15 @@ class MatteLayers:
         return channels
 
     def metadata(self):
+        from dataclasses import asdict
+        from sammie.refinement.cache import RefinementCache
+        applied = RefinementCache(self.root).applied_settings()
         return dict(source=self.source, combined=self.combined,
                     channels={str(k): v for k, v in self.names.items()},
                     union='A: maximum of object alphas, matching Sammie union semantics',
                     missing_object_frames_as_zero=self.missing,
                     vitmatte_view=self.session.get('vitmatte_view', 'validated'),
                     vitmatte_enabled=self.session.get('vitmatte_enabled', False),
+                    vitmatte_applied_settings=asdict(applied) if applied is not None else None,
                     session_parameters={k: v for k, v in self.session.items()
                                         if k.startswith(('matany_', 'vitmatte_')) or k in ('holes', 'dots', 'grow', 'border_fix')})

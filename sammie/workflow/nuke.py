@@ -115,12 +115,11 @@ def deliver(job,progress=lambda *args:None):
         # Never silently substitute original alpha when the selected refined view is stale.
         if request['matte_source']=='matting' and session.get('vitmatte_enabled') and session.get('vitmatte_view')!='original':
             from sammie.refinement.cache import RefinementCache
-            from sammie.refinement.algorithms import RefinementSettings
-            from sammie.settings_manager import get_settings_manager
-            with mattes.context(): settings=RefinementSettings.from_session(get_settings_manager())
+            cache=RefinementCache(root)
+            settings=cache.applied_settings()
             for frame in range(first,last+1):
                 for oid in mattes.ids:
-                    if RefinementCache(root).selected(frame,oid,settings,session.get('vitmatte_view','validated')) is None:
+                    if settings is None or cache.selected(frame,oid,settings,session.get('vitmatte_view','validated')) is None:
                         raise ValueError(f'ViTMatte is missing/stale at timeline frame {frame}; refine it or choose Original VideoMaMa.')
         info=project_info(root)
         if info: metadata['exr_source']=dict(info,options=dict(info['options'],color_space='linear709'))
